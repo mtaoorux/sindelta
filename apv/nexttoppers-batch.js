@@ -527,7 +527,7 @@ async function openContent(item) {
 
         try {
           const drmRes = await fetch(
-            `https://learnbyakp.onrender.com/api/nexttoppers/drm?videoid=${encodeURIComponent(
+            `https://mtaiirusapi.onrender.com/api/nexttoppers/drm?videoid=${encodeURIComponent(
               String(finalVideoId).trim()
             )}`
           );
@@ -988,7 +988,7 @@ document.getElementById("themeBtn").addEventListener("click", toggleTheme);
 applySavedTheme();
 loadCourse();
 
-const SCRIPT_LINK = "https://learnbyakp.online/htm-js/aut.js";
+const SCRIPT_LINK = "https://mtaiirus.pages.dev/htm-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
