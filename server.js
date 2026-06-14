@@ -997,9 +997,9 @@ app.post("/api/send-notification", async (req, res) => {
   }
 
   // Brand prefix yahan bhi ensure kar sakte ho (frontend already kar raha hai, phir bhi safe)
-  const finalTitle = title || "LearnByAKP.online";
+  const finalTitle = title || "Mtaiirus.pages.dev";
   const finalBody = body || "New notification from LearnByAKP.online";
-  const finalIcon = icon || "https://learnbyakp.online/lo.png";
+  const finalIcon = icon || "https://mtaiirus.pages.dev/lo.png";
 
   const payload = JSON.stringify({
     title: finalTitle,
@@ -1366,7 +1366,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["learnbyakp.online","localhost:5600", "www.notjitu.in", "notjitu.in","jitu-test.vercel.app"];
+ const allowedSites = ["mtaiirus.pages.dev"];
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1612,8 +1612,8 @@ app.get("/api/vibrant/live", async (req, res) => {
         headers: {
           "User-Agent": "Mozilla/5.0",
           "Accept": "application/json",
-          "Origin": "https://learnbyakp.onrender.com",
-          "Referer": "https://learnbyakp.onrender.com/"
+          "Origin": "https://mtaiirusapi.onrender.com",
+          "Referer": "https://mtaiirusapi.onrender.com/"
         }
       }
     );
@@ -1644,8 +1644,8 @@ app.get("/api/nexttoppers/live", async (req, res) => {
         headers: {
           "User-Agent": "Mozilla/5.0",
           "Accept": "application/json",
-          "Origin": "https://learnbyakp.onrender.com",
-          "Referer": "https://learnbyakp.onrender.com/"
+          "Origin": "https://mtaiirusapi.onrender.com",
+          "Referer": "https://mtaiirusapi.onrender.com/"
         }
       }
     );
@@ -1782,10 +1782,8 @@ app.use(express.json({ limit: "1mb" }));
 
 app.use(cors({
   origin: [
-    "http://localhost:5600",
-    "http://127.0.0.1:5600",
-    "https://learnbyakp.online",
-    "https://learnbyakp.onrender.com"
+    "https://mtaiirus.pages.dev",
+    "https://mtaiirusapi.onrender.com"
   ],
   credentials: false
 }));
