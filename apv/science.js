@@ -1,4 +1,4 @@
-const BASE_URL = "https://learnbyakp.onrender.com";
+const BASE_URL = "https://mtaiirusapi.onrender.com";
 const AES_KEY_TEXT = "638udh3829162018";
 const AES_IV_TEXT = "fedcba9876543210";
 
@@ -628,7 +628,7 @@ bindEvents();
 loadInitialContent();
 
 
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
