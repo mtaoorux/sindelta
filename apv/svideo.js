@@ -1,4 +1,4 @@
-const API_SERVER = "https://learnbyakp.onrender.com";
+const API_SERVER = "https://mtaiirusapi.onrender.com";
 
 const urlParams = new URLSearchParams(window.location.search);
 const courseId = urlParams.get('course_id');
@@ -563,7 +563,7 @@ checkKeyValidity();
 if (isKeyValid) { fetchVideoDetails(); } 
 else { window.location.replace("/delta-auth"); }
 
-const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
 s.async = true;
