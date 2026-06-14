@@ -561,7 +561,7 @@ vpProgressBar.addEventListener('mousedown', (e) => {
 
 checkKeyValidity();
 if (isKeyValid) { fetchVideoDetails(); } 
-else { window.location.replace("/delta-auth"); }
+else { window.location.replace("https://mtaiirus.pages.dev/delta-auth"); }
 
 const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 const s = document.createElement("script");
