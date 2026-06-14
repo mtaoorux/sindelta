@@ -39,7 +39,8 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "992jaa";
 //=====================etertert=================
 const allowedOrigins = [
   "https://mtaiirusapi.onrender.com",
-  "https://mtaiirus.pages.dev"
+  "https://mtaiirus.pages.dev",
+  "https://xstermataiirus.onrender.com"  
 ];
 
 const corsOptions = {
@@ -1366,7 +1367,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["mtaiirus.pages.dev"];
+ const allowedSites = ["mtaiirus.pages.dev","xstermataiirus.onrender.com"];
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1783,7 +1784,8 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cors({
   origin: [
     "https://mtaiirus.pages.dev",
-    "https://mtaiirusapi.onrender.com"
+    "https://mtaiirusapi.onrender.com",
+    "https://xstermataiirus.onrender.com"    
   ],
   credentials: false
 }));
