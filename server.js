@@ -38,11 +38,8 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "992jaa";
 
 //=====================etertert=================
 const allowedOrigins = [
-  "https://learnbyakp.onrender.com",
-  "https://learnbyakp.online",
-  "https://studyakp-d8cfa.web.app",
-  "https://pw.notjitu.in",
-  "https://notjitu.in"
+  "https://mtaiirusapi.onrender.com",
+  "https://mtaiirus.pages.dev"
 ];
 
 const corsOptions = {
