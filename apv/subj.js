@@ -10,7 +10,7 @@
   }
 });  
     
-    const API_BASE = "https://learnbyakp.onrender.com";
+    const API_BASE = "https://mtaiirusapi.onrender.com";
     const DEFAULT_THUMB = "https://i.ibb.co/9Hm0NqsH/f69ed82b-7169-45fc-a82b-915e453c6340.png";
     const DEFAULT_SUBJECT_ICON = "https://static.pw.live/react-batches/assets/svg/subjects/defaultSubject.svg";
 
@@ -526,7 +526,7 @@ function renderLiveClasses() {
     initPage();
 
     
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
@@ -539,4 +539,3 @@ s.onerror = () => {
 };
 
 document.head.appendChild(s);
-  
