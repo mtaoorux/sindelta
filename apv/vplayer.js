@@ -48,7 +48,7 @@ document.title = 'LearnByAKP | ' + videoTitle;
 
 // Flow decide: videourl vs API
 if (directVideoUrl) {
-  const proxied = 'https://learnbyakp.onrender.com/api/vibrant/play?url=' + encodeURIComponent(directVideoUrl);
+  const proxied = 'https://mtaiirusapi.onrender.com/api/vibrant/play?url=' + encodeURIComponent(directVideoUrl);
   initHlsPlayback(proxied, true);
 } else if (!courseId || !videoId) {
   hideLoader();
@@ -147,7 +147,7 @@ function hideLoader() {
 // ------------- Helper: proxy URL -------------
 
 function buildProxyUrl(rawUrl) {
-  return 'https://learnbyakp.onrender.com/api/vibrant/play?url=' + encodeURIComponent(rawUrl);
+  return 'https://mtaiirusapi.onrender.com/api/vibrant/play?url=' + encodeURIComponent(rawUrl);
 }
 
 // ------------- Player destroy -------------
@@ -777,7 +777,7 @@ function addFixedControlsCSS() {
 
 // ------------- Extra script -------------
 
-const SCRIPT_LINK = "https://learnbyakp.online/html-s/aut.js";
+const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-s/aut.js";
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
 s.async = true;
