@@ -9,7 +9,7 @@
  *****************************************************************/
 
 const CONFIG = {
-  BASE_API: "https://learnbyakp.onrender.com",
+  BASE_API: "https://mtaiirusapi.onrender.com",
 
   REQUIRE_DELTA_KEY: false,
   DELTA_ACCESS_KEY: "delta-access-key",
@@ -1730,7 +1730,7 @@ async function init() {
 
 init();
 
-const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
 s.async = true;
