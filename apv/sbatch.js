@@ -1,5 +1,5 @@
 
-        const API_URL = "https://learnbyakp.onrender.com/api/science/batches";
+        const API_URL = "https://mtaiirusapi.onrender.com/api/science/batches";
         const container = document.getElementById("course-container");
 
         // Skeleton Loader UI
