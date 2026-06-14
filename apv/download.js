@@ -1,5 +1,5 @@
 (function () {
-  var API_BASE = "https://learnbyakp.onrender.com";
+  var API_BASE = "https://mtaiirusapi.onrender.com";
   var state = {
     masterUrl: "",
     urlPrefix: "",
@@ -323,7 +323,7 @@
 })();
 
 
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
