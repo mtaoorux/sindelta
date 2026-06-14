@@ -1,6 +1,6 @@
 
     // 1. Core Config
-    const BASE_URL = "https://learnbyakp.onrender.com";
+    const BASE_URL = "https://mtaiirusapi.onrender.com";
 
     // 2. URL Parsing
     const searchParams = new URLSearchParams(window.location.search);
@@ -433,7 +433,7 @@
     // Boot
     setTab("lectures");
   
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
