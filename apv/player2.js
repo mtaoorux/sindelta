@@ -15,7 +15,7 @@ const PW_HEADERS = {
     "device-meta": "{\"APP_VERSION\":\"538\",\"APP_VERSION_NAME\":\"15.32.0\",\"DEVICE_MAKE\":\"Samsung\",\"DEVICE_MODEL\":\"SM-A707F\",\"OS_VERSION\":\"11\",\"PACKAGE_NAME\":\"xyz.penpencil.physicswala\",\"network\":\"wifi_data\",\"carrier\":\"UNDEFINED\"}",
     "randomid": "d054aefb-8a77-4ae1-bbf6-77c0e1931374",
     "referer": "https://android.pw.live"
-};const VIDEO_DETAILS_URL = `https://learnbyakp.onrender.com/api/pw/video-url-details?batchId=${batch_id}&childId=${schedule_id}&subjectId=${subject_id}`;
+};const VIDEO_DETAILS_URL = `https://mtaiirusapi.onrender.com/api/pw/video-url-details?batchId=${batch_id}&childId=${schedule_id}&subjectId=${subject_id}`;
 
 let VIDEO_DATA = null;  // 🔹 global
 
@@ -72,7 +72,7 @@ document.getElementById('downloadBtn').addEventListener('click', () => {
   // Redirect to download endpoint
   window.location.href = `/download?url=${encodeURIComponent(finalUrl)}`;
 });
-const API_URL = `https://learnbyakp.onrender.com/slides?batch_id=${batch_id}&subject_id=${subject_id}&schedule_id=${schedule_id}&type=slides`;
+const API_URL = `https://mtaiiirusapi.onrender.com/slides?batch_id=${batch_id}&subject_id=${subject_id}&schedule_id=${schedule_id}&type=slides`;
 
 let SLIDES = [];
 
@@ -115,7 +115,7 @@ async function initSlides() {
   } catch (err) {
     console.error("Error loading slides:", err);
   }
-}const API_URL1 = `https://learnbyakp.onrender.com/slides?batch_id=${batch_id}&subject_id=${subject_id}&schedule_id=${schedule_id}&type=schedule-details`;
+}const API_URL1 = `https://mtaiirusapi.onrender.com/slides?batch_id=${batch_id}&subject_id=${subject_id}&schedule_id=${schedule_id}&type=schedule-details`;
 
 let TOPIC_NAME = "";
 let NOTES = [];
@@ -802,7 +802,7 @@ initSlides();
 
 
 function escapeAttr(value){ return escapeHtml(value).replace(/`/g, "&#96;"); }
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
