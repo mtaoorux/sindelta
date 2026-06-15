@@ -685,8 +685,8 @@ function processNotifications() {
         sendPushNotification(
           item.title || "Upcoming Class",
           `Upcoming • ${startText}`,
-          "https://learnbyakp.online/lo.png",
-          { itemId: item.id, entityId: item.entity_id, url: watchUrl || "https://learnbyakp.online/" }
+          "https://mtaiirus.pages.dev/lo.png",
+          { itemId: item.id, entityId: item.entity_id, url: watchUrl || "https://mtaiirus.pages.dev/" }
         );
         notifyState.sent[upcomingKey] = true;
       }
@@ -699,7 +699,7 @@ function processNotifications() {
         sendPushNotification(
           item.title || "Lecture Live",
           `Lecture Live • ${item.course?.title || "Class is now live"}`,
-          "https://learnbyakp.online/lo.png",
+          "https://mtaiirus.pages.dev/lo.png",
           { itemId: item.id, entityId: item.entity_id, url: watchUrl || "https://mtaiirus.pages.dev/" }
         );
         notifyState.sent[liveKey] = true;
