@@ -3,7 +3,7 @@
 // ============================================
 
 
-const BASE_URL = "https://learnbyakp.onrender.com";
+const BASE_URL = "https://mtaiirusapi.onrender.com";
 const FALLBACK_IMAGE = "https://decicqog4ulhy.cloudfront.net/0/admin_v2/uploads/courses/thumbnail/2671188_1_logo.jpg";
 const PAGE_NOTIFY_NAMESPACE = location.pathname.replace(/[^a-z0-9]/gi, "_").toLowerCase() || "default_page";
 const NOTIFY_STORAGE_KEY = `nt_live_notify_settings_v1_${PAGE_NOTIFY_NAMESPACE}`;
@@ -18,7 +18,7 @@ const LIVE_CLASSES_API = `${BASE_URL}/api/nexttoppers/live`;
 
 
 // Backend notification server
-const NOTIFICATION_SERVER_URL = "https://learnbyakp.onrender.com";
+const NOTIFICATION_SERVER_URL = "https://mtaiirusapi.onrender.com";
 
 
 // VAPID public key
@@ -289,7 +289,7 @@ async function registerServiceWorker() {
     return null;
   }
   try {
-    const registration = await navigator.serviceWorker.register("https://learnbyakp.online/sw.js", { scope: "/" });
+    const registration = await navigator.serviceWorker.register("https://mtaiirus.paged.dev/sw.js", { scope: "/" });
     console.log("SW registered:", registration);
     return registration;
   } catch (err) {
@@ -375,8 +375,8 @@ async function ensureNotificationPermission() {
 // Frontend se branded payload bhejna
 async function sendPushNotification(title, body, icon, data = {}) {
   try {
-    const brandTitle = `LearnByAKP.online • ${title || "Live Class"}`;
-    const brandBody = body || "New update from LearnByAKP.online";
+    const brandTitle = `Mtaiirus • ${title || "Live Class"}`;
+    const brandBody = body || "New update from Mtaiirus";
 
     const response = await fetch(`${NOTIFICATION_SERVER_URL}/api/send-notification`, {
       method: "POST",
@@ -384,7 +384,7 @@ async function sendPushNotification(title, body, icon, data = {}) {
       body: JSON.stringify({
         title: brandTitle,
         body: brandBody,
-        icon: icon || "https://learnbyakp.online/lo.png",
+        icon: icon || "https://mtaiirus.pages.dev/lo.png",
         data
       })
     });
@@ -509,7 +509,7 @@ if (live_from && String(live_from).trim()) {
   if (String(finalVideoId).trim()) {
     try {
       const drmRes = await fetch(
-        `https://learnbyakp.onrender.com/api/nexttoppers/drm?videoid=${encodeURIComponent(String(finalVideoId).trim())}`
+        `https://mtaiirusapi.onrender.com/api/nexttoppers/drm?videoid=${encodeURIComponent(String(finalVideoId).trim())}`
       );
       const drmJson = await drmRes.json();
 
@@ -700,7 +700,7 @@ function processNotifications() {
           item.title || "Lecture Live",
           `Lecture Live • ${item.course?.title || "Class is now live"}`,
           "https://learnbyakp.online/lo.png",
-          { itemId: item.id, entityId: item.entity_id, url: watchUrl || "https://learnbyakp.online/" }
+          { itemId: item.id, entityId: item.entity_id, url: watchUrl || "https://mtaiirus.pages.dev/" }
         );
         notifyState.sent[liveKey] = true;
       }
@@ -1097,7 +1097,7 @@ if (document.readyState === "loading") {
 
 
 // extra script
- const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+ const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
 
 
 const s = document.createElement("script");
