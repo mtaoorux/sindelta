@@ -181,7 +181,7 @@
         const finalTitle = batchDetails.name || batchNameFromUrl;
         pageTitle.textContent = finalTitle;
         heroTitle.textContent = finalTitle;
-        document.title = `${finalTitle} - LearnByAKP`;
+        document.title = `${finalTitle} - Mtaiirus`;
 
         renderSubjects();
         renderAbout();
@@ -470,7 +470,7 @@ function renderLiveClasses() {
     });
 
     document.getElementById("shareBtn").addEventListener("click", () => {
-      const message = `Check out this course from 𝘓𝙚𝙖𝙧𝙣𝙗𝙮𝙖𝙠𝙥-𝙥𝙬-${window.location.href}`;
+      const message = `Check out this course from MTAIIRUS-${window.location.href}`;
       const shareUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
       window.open(shareUrl, "_blank");
     });
