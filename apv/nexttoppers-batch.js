@@ -515,7 +515,7 @@ async function openContent(item) {
       if (Number(file_type) === 2 && Number(video_type) === 1) {
         window.open(`https://www.youtube.com/watch?v=${clean}`, "_blank");
       } else if (/\.(mpd|m3u8|mp4)(\?|$)/i.test(clean)) {
-        location.href = `/videoplayer?file_url=${encodeURIComponent(clean)}&title=${title}`;
+        location.href = `../nexttoppers/videoplayer?file_url=${encodeURIComponent(clean)}&title=${title}`;
       } else {
         window.open(clean, "_blank");
       }
@@ -537,7 +537,7 @@ async function openContent(item) {
 
           if (drmFileUrl && String(drmFileUrl).trim()) {
             redirectToVideoPlayer(
-              `/videoplayer?file_url=${encodeURIComponent(
+              `../nexttoppers/videoplayer?file_url=${encodeURIComponent(
                 String(drmFileUrl).trim()
               )}&title=${encodeURIComponent(item?.title || "")}`
             );
