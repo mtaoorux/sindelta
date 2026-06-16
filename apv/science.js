@@ -61,7 +61,7 @@ const el = {
 function setTitle(title) {
   state.title = title || "Course Content";
   el.courseTitle.textContent = state.title;
-  document.title = `${state.title} - LearnByAKP`;
+  document.title = `${state.title} - Mtaiirus`;
 }
 
 function escapeHtml(value = "") {
