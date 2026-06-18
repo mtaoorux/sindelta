@@ -1,6 +1,6 @@
 
     // 1. Core Config
-    const BASE_URL = "https://learnbyakp.onrender.com";
+    const BASE_URL = "https://mtaiirusapi.onrender.com";
 
     // 2. URL Parsing
     const searchParams = new URLSearchParams(window.location.search);
