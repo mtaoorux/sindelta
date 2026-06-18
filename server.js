@@ -1,3 +1,4 @@
+
 // ================== IMPORTS ==================
 const functions = require("firebase-functions/v1"); // v1 import
 const admin = require("firebase-admin");
@@ -38,9 +39,9 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "992jaa";
 
 //=====================etertert=================
 const allowedOrigins = [
+  "https://mtaiirus.paged.dev",
   "https://mtaiirusapi.onrender.com",
-  "https://mtaiirus.pages.dev",
-  "https://xstermataiirus.onrender.com"  
+  "https://xstermataiirus.onrender.com"
 ];
 
 const corsOptions = {
@@ -193,7 +194,7 @@ function emailOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Use this one‑time code to verify your email on
-        <strong style="color:#e5e7eb;">LearnByAKP.online</strong>.
+        <strong style="color:#e5e7eb;">Mtaiirus.pages.dev</strong>.
       </p>
       <div style="
         margin:18px 0 20px;
@@ -292,7 +293,7 @@ function registerOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Complete your registration on
-        <strong style="color:#e5e7eb;">LearnByAKP.online</strong> using the
+        <strong style="color:#e5e7eb;">mtaiirus.pages.dev</strong> using the
         one‑time code below.
       </p>
       <div style="
@@ -544,6 +545,7 @@ res.json(data);
     res.status(500).json({ error: err.toString() });
   }
 });
+//frytdrtdtsdf
 //========science===
   const PW_HEADERS = {
     "Accept-Encoding": "gzip",
@@ -601,6 +603,180 @@ app.get('/slides', async (req, res) => {
     }
 });
 
+ // PW Headers constant - आपके दिए headers use कर रहे हैं
+const AUTHORIZATION = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjEyODc2MDAiLCJ0aW1lc3RhbXAiOjE3ODE0MDk4OTEsIml2X3ZlciI6Miwic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqRXlPRGMyTURBaUxDSmxiV0ZwYkNJNklqazFOVGs1TnpVek56QkFaMjFoYVd3dVkyOXRJaXdpYm1GdFpTSTZJaUlzSW5SbGJtRnVkRlI1Y0dVaU9pSjFjMlZ5SWl3aWRHVnVZVzUwVG1GdFpTSTZJbUZ5YldGMGFITmZaR0lpTENKMFpXNWhiblJKWkNJNklpSXNJbVJwYzNCdmMyRmliR1VpT21aaGJITmxmUS5EbmNwSzhSWWd6ZzJsSHUxVkZKaVluYjVGMjlwTk52eW1ZdUZqUkxIV004In0.ftduhO--p4Ku0CHqlfbstlPH9PezVtGmWYKaBmSv5UI";
+const USERID = "1287600";
+const AUTHTOKEN = "appxapi";
+
+// Common headers function
+function getCommonHeaders() {
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://armaths.akamai.net.in',
+    'Referer': 'https://armaths.akamai.net.in/',
+    'source': 'website',
+    'client-service': 'Appx',
+    'Device-Type': '',
+    'Authorization': AUTHORIZATION,
+    'User-Id': USERID,
+    'Auth-Key': AUTHTOKEN,
+    'X-Forwarded-For': '127.0.0.1',
+    'X-Real-IP': '127.0.0.1',
+  };
+}
+
+// 1. Proxy folder_contentsv3
+app.get('/api/folder-contents', async (req, res) => {
+  const { course_id, parent_id } = req.query;
+  
+  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/folder_contentsv3');
+  targetUrl.searchParams.set('course_id', course_id);
+  targetUrl.searchParams.set('parent_id', parent_id || '');
+  targetUrl.searchParams.set('windowsapp', 'false');
+  targetUrl.searchParams.set('start', '0');
+
+  try {
+    const response = await axios.get(targetUrl.toString(), {
+      headers: getCommonHeaders(),
+      timeout: 10000,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Folder contents proxy error:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status
+    });
+  }
+});
+
+// 2. Proxy course_contents_by_live_status
+app.get('/api/live-courses', async (req, res) => {
+  const { course_id, start, live_status } = req.query;
+  
+  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/course_contents_by_live_status');
+  targetUrl.searchParams.set('course_id', course_id || '74');
+  targetUrl.searchParams.set('start', start || '-1');
+  targetUrl.searchParams.set('live_status', live_status || '1');
+
+  try {
+    const response = await axios.get(targetUrl.toString(), {
+      headers: getCommonHeaders(),
+      timeout: 10000,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Live courses proxy error:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status
+    });
+  }
+});
+
+// 3. Proxy get_previous_live_videos
+app.get('/api/previous-live-videos', async (req, res) => {
+  const { course_id, start, folder_wise_course, userid } = req.query;
+  
+  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/get_previous_live_videos');
+  targetUrl.searchParams.set('course_id', course_id || '74');
+  targetUrl.searchParams.set('start', start || '0');
+  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
+  targetUrl.searchParams.set('userid', userid || USERID);
+
+  try {
+    const response = await axios.get(targetUrl.toString(), {
+      headers: getCommonHeaders(),
+      timeout: 10000,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Previous live videos proxy error:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status
+    });
+  }
+});
+  app.get('/api/video-details', async (req, res) => {
+  const { course_id, video_id, ytflag, folder_wise_course, lc_app_api_url } = req.query;
+  
+  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/fetchVideoDetailsById');
+  targetUrl.searchParams.set('course_id', course_id || '74');
+  targetUrl.searchParams.set('video_id', video_id);
+  targetUrl.searchParams.set('ytflag', ytflag || '0');
+  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
+  targetUrl.searchParams.set('lc_app_api_url', lc_app_api_url || '');
+
+  try {
+    const response = await axios.get(targetUrl.toString(), {
+      headers: getCommonHeaders(),
+      timeout: 10000,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Video details proxy error:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status
+    });
+  }
+});
+
+  const AUTHORIZATION2 = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjE0OTQxMzgiLCJ0aW1lc3RhbXAiOjE3ODE3OTQ2NTMsIml2X3ZlciI6Miwic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqRTBPVFF4TXpnaUxDSmxiV0ZwYkNJNkltTm9ZVzVrWVc1d2NtRnFZWEJoZEdrNU1UazRRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpqYUdGdVpHRnVJSEJ5WVdwaGNHRjBhU0lzSW5SbGJtRnVkRlI1Y0dVaU9pSjFjMlZ5SWl3aWRHVnVZVzUwVG1GdFpTSTZJbkpuZG1scmNtRnRhbVZsZEY5a1lpSXNJblJsYm1GdWRFbGtJam9pSWl3aVpHbHpjRzl6WVdKc1pTSTZabUZzYzJWOS5aaGpacUFiYXFuWlZUQkFBQTdYOHRtQ2ZpTWpMRjlLYloxYnNETHNIVWc4In0.ptnBRScrRGULahWG9q0ghrB1MsmTufDPMy3nGjqMBHg";
+const USERID2 = "1494138";
+const AUTHTOKEN2 = "appxapi";
+
+// Common headers function
+function getCommonHeaders2() {
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://rankersgurukul.com',
+    'Referer': 'https://rankersgurukul.com/',
+    'source': 'website',
+    'client-service': 'Appx',
+    'Device-Type': '',
+    'Authorization': AUTHORIZATION2,
+    'User-Id': USERID2,
+    'Auth-Key': AUTHTOKEN2,
+    'X-Forwarded-For': '127.0.0.1',
+    'X-Real-IP': '127.0.0.1',
+  };
+}
+// Slides API Proxy (पहले जैसा)
+  app.get('/api/vikaram/video-details', async (req, res) => {
+  const { course_id, video_id, ytflag, folder_wise_course, lc_app_api_url } = req.query;
+  
+  const targetUrl = new URL('https://rgvikramjeetapi.classx.co.in/get/fetchVideoDetailsById');
+  targetUrl.searchParams.set('course_id', course_id || '74');
+  targetUrl.searchParams.set('video_id', video_id);
+  targetUrl.searchParams.set('ytflag', ytflag || '0');
+  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
+  targetUrl.searchParams.set('lc_app_api_url', lc_app_api_url || '');
+
+  try {
+    const response = await axios.get(targetUrl.toString(), {
+      headers: getCommonHeaders2(),
+      timeout: 10000,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('Video details proxy error:', error.message);
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status
+    });
+  }
+});
   //=====xdcfdsfsd
 
   app.get("/api/science/previous-live", async (req, res) => {
@@ -998,8 +1174,8 @@ app.post("/api/send-notification", async (req, res) => {
   }
 
   // Brand prefix yahan bhi ensure kar sakte ho (frontend already kar raha hai, phir bhi safe)
-  const finalTitle = title || "Mtaiirus.pages.dev";
-  const finalBody = body || "New notification from LearnByAKP.online";
+  const finalTitle = title || "https://mtaiirus.pages.dev/";  
+  const finalBody = body || "New notification from Mtaiirus.pages.dev/";
   const finalIcon = icon || "https://mtaiirus.pages.dev/lo.png";
 
   const payload = JSON.stringify({
@@ -1367,7 +1543,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["mtaiirus.pages.dev","xstermataiirus.onrender.com"];
+ const allowedSites = ["mtaiirus.pages.dev","localhost:5600", "www.mtaiirus.pages.dev", "xstermataiirus.onrender.com","jitu-test.vercel.app"]; 
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1783,9 +1959,11 @@ app.use(express.json({ limit: "1mb" }));
 
 app.use(cors({
   origin: [
+    "http://localhost:5600",
+    "http://127.0.0.1:5600",
+    "https://xstermataiirus.onrender.com",    
     "https://mtaiirus.pages.dev",
-    "https://mtaiirusapi.onrender.com",
-    "https://xstermataiirus.onrender.com"    
+    "https://mtaiirusapi.onrender.com"
   ],
   credentials: false
 }));
@@ -2048,75 +2226,7 @@ app.get("/api/pw/topics", async (req, res) => {
 }
 
   //=========eter========
-  app.get("/api/pw/video-url-details", async (req, res) => {
-  const { batchId, subjectId, childId } = req.query;
-
-  if (!batchId || !subjectId || !childId) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing batchId, subjectId, or childId",
-    });
-  }
-
-  const url =
-    `${CHANGE}/api/pw/video-url-details?batchId=${encodeURIComponent(batchId)}` +
-    `&subjectId=${encodeURIComponent(subjectId)}` +
-    `&childId=${encodeURIComponent(childId)}`;
-
-  return proxyJson(req, res, url);
-});
-/**
- * 1) /api/pw/video
- * frontend call:
- * /api/pw/video?batchId=...&subjectId=...&childId=...
- */
-app.get("/api/pw/video", async (req, res) => {
-  const { batchId, subjectId, childId } = req.query;
-
-  if (!batchId || !subjectId || !childId) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing batchId, subjectId, or childId",
-    });
-  }
-
-  const url =
-    `${BASE}/api/pw/video?batchId=${encodeURIComponent(batchId)}` +
-    `&subjectId=${encodeURIComponent(subjectId)}` +
-    `&childId=${encodeURIComponent(childId)}`;
-
-  return proxyJson(req, res, url);
-});
-
-/**
- * 2) /api/pw/videoplay
- * frontend call:
- * /api/pw/videoplay?batchId=...&subjectId=...&childId=...
- */
-app.get("/api/pw/videoplay", async (req, res) => {
-  const { batchId, subjectId, childId } = req.query;
-
-  if (!batchId || !subjectId || !childId) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing batchId, subjectId, or childId",
-    });
-  }
-
-  const url =
-    `${BASE}/api/pw/videoplay?batchId=${encodeURIComponent(batchId)}` +
-    `&subjectId=${encodeURIComponent(subjectId)}` +
-    `&childId=${encodeURIComponent(childId)}`;
-
-  return proxyJson(req, res, url);
-});
-
-/**
- * 3) /api/pw/get-url
- * frontend call:
- * /api/pw/get-url?batchId=...&subjectId=...&childId=...
- */
-app.get("/api/pw/get-url", async (req, res) => {
+ app.get("/api/pw/get-url", async (req, res) => {
   const { batchId, subjectId, childId } = req.query;
 
   if (!batchId || !subjectId || !childId) {
@@ -2366,7 +2476,7 @@ const safeFetch = async (url) => {
 
   
 // ================= DATACONTENT =================
-app.get("/api/pw/videonew", async (req, res) => {
+app.get("/api/pw/videoneasdw", async (req, res) => {
   return proxyGet(req, res, "/api/pw/videonew", {
     batchId: "batchId",
     subjectId: "subjectId",
@@ -2374,7 +2484,7 @@ app.get("/api/pw/videonew", async (req, res) => {
   });
 });
 // ================= VIDEO COMBINED =================
-app.get("/api/pw/videosuper", async (req, res) => {
+app.get("/api/pw/videosupadser", async (req, res) => {
   return proxyGet(req, res, "/api/pw/videosuper", {
     batchId: "batchId",
     childId: "childId",
@@ -3012,7 +3122,7 @@ app.get("/api/pw/download", async (req, res) => {
       });
 
       res.redirect(
-        `https://learnbyakp.online/login.html?token=${encodeURIComponent(
+        `https://mtaiirus.pages.dev/login.html?token=${encodeURIComponent(
           token
         )}&user=${encodeURIComponent(JSON.stringify(user))}`
       );
