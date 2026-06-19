@@ -21,7 +21,7 @@
 
       const parts = location.pathname.split("/").filter(Boolean);
 
-      const akpIndex = parts.indexOf("LearnByAKP-tests");
+      const akpIndex = parts.indexOf("Mtaiirus-tests");
       if (akpIndex >= 0 && parts[akpIndex + 1]) return parts[akpIndex + 1];
 
       const testIndex = parts.indexOf("test");
