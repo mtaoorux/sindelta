@@ -39,7 +39,7 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "992jaa";
 
 //=====================etertert=================
 const allowedOrigins = [
-  "https://xlonz.pages.dev",
+  "https://mtaiiruss.pages.dev",
   "https://mtaiirusapi.onrender.com",
   "https://xstermataiirus.onrender.com"
 ];
@@ -194,7 +194,7 @@ function emailOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Use this one‑time code to verify your email on
-        <strong style="color:#e5e7eb;">Xlonz.pages.dev</strong>.
+        <strong style="color:#e5e7eb;">Mtaiiruss.pages.dev</strong>.
       </p>
       <div style="
         margin:18px 0 20px;
@@ -293,7 +293,7 @@ function registerOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Complete your registration on
-        <strong style="color:#e5e7eb;">xlonz.pages.dev</strong> using the
+        <strong style="color:#e5e7eb;">mtaiiruss.pages.dev</strong> using the
         one‑time code below.
       </p>
       <div style="
@@ -1174,9 +1174,9 @@ app.post("/api/send-notification", async (req, res) => {
   }
 
   // Brand prefix yahan bhi ensure kar sakte ho (frontend already kar raha hai, phir bhi safe)
-  const finalTitle = title || "https://xlonz.pages.dev/";  
-  const finalBody = body || "New notification from Xlonz.pages.dev/";
-  const finalIcon = icon || "https://xlonz.pages.dev/lo.png";
+  const finalTitle = title || "https://mtaiiruss.pages.dev/";  
+  const finalBody = body || "New notification from mtaiiruss.pages.dev/";
+  const finalIcon = icon || "https://mtaiiruss.pages.dev/lo.png";
 
   const payload = JSON.stringify({
     title: finalTitle,
@@ -1543,7 +1543,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["xlonz.pages.dev","localhost:5600", "www.xlonz.pages.dev", "xstermataiirus.onrender.com","jitu-test.vercel.app"]; 
+ const allowedSites = ["mtaiiruss.pages.dev","localhost:5600", "www.mtaiiruss.pages.dev", "xstermataiirus.onrender.com","jitu-test.vercel.app"]; 
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1962,7 +1962,7 @@ app.use(cors({
     "http://localhost:5600",
     "http://127.0.0.1:5600",
     "https://xstermataiirus.onrender.com",    
-    "https://xlonz.pages.dev",
+    "https://mtaiiruss.pages.dev",
     "https://mtaiirusapi.onrender.com"
   ],
   credentials: false
@@ -3122,7 +3122,7 @@ app.get("/api/pw/download", async (req, res) => {
       });
 
       res.redirect(
-        `https://xlonz.pages.dev/login.html?token=${encodeURIComponent(
+        `https://mtaiiruss.pages.dev/login.html?token=${encodeURIComponent(
           token
         )}&user=${encodeURIComponent(JSON.stringify(user))}`
       );
