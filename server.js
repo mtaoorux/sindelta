@@ -4,12 +4,10 @@ const admin = require("firebase-admin");
 const cors = require("cors");
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const cloudscraper = require('cloudscraper');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 const webpush = require("web-push");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
-const crypto = require("crypto"); 
+const crypto = require("crypto");
 const path = require("path");
 const fs = require("fs");
 const fetch = require("node-fetch");
@@ -39,9 +37,8 @@ const allowedOrigins = [
   "https://Mtaiirusapi.onrender.com",
   "https://Mtaiirus.pages.dev",
   "https://studyakp-d8cfa.web.app",
-  "https://pw.notjitu.in",
+  "https://www.notjitu.in",
   "https://notjitu.in",
-  "https://learnbyakp.learnbyakp.workers.dev",
   "https://xstermataiirus.onrender.com"
 ];
 
@@ -455,7 +452,35 @@ function createApp() {
     res.json({ ok: true, env: process.env.NODE_ENV || "dev" });
   });
   //===========api start==
+ app.get("/api/missionjeet/content-details", async (req, res) => {
+  try {
+    const entityId = req.query.content_id;
+    const courseId = req.query.courseid;
 
+    if (!entityId || !courseId) {
+      return res.status(400).json({ error: "Missing content_id or courseid" });
+    }
+
+    const url = `${BASE}/api/missionjeet/content-details?content_id=${entityId}&course_id=${courseId}`;
+
+    const response = await fetchfn(url);
+
+    // ✅ check response ok or not
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: `External API error: ${response.status}`
+      });
+    }
+
+    const data = await response.json();
+
+    res.json(data);
+
+  } catch (err) {
+    console.error("/api/missionjeet/content-details error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
   //========ewrwerw===========
 const KEY = Buffer.from("638udh3829162018");
 const IV = Buffer.from("fedcba9876543210");
@@ -484,247 +509,12 @@ function decryptVibrant(input) {
     return null;
   }
 }
-//===============
-  
-  const dec = "Ch@tS3cr3tK3y!16";
-const kiv = "Ch@tIV#16Bytes!!";
 
-/**
- * Encrypted Base64 -> decrypted JSON object
- */
-function decryptApiResponse(encryptedBase64) {
-  const decipher = crypto.createDecipheriv(
-    "aes-128-cbc",
-    Buffer.from(dec, "utf8"),
-    Buffer.from(kiv, "utf8")
-  );
-
-  let decrypted = decipher.update(
-    Buffer.from(encryptedBase64, "base64"),
-    undefined,
-    "utf8"
-  );
-  decrypted += decipher.final("utf8");
-
-  return JSON.parse(decrypted);
-}
-
-/**
- * Helper: upstream ko call karo same headers ke saath
- * Aur decrypted data return karo
- */
-async function fetchAndDecryptContentDetails(reqHeaders, content_id, course_id) {
-  const url = new URL("https://course.nexttoppers.com/course/content-details");
-  url.searchParams.set("content_id", String(content_id));
-  url.searchParams.set("course_id", String(course_id));
-
-  // Jo headers aapke request me aaye, unko forward karna
-  const forwardHeaders = {};
-  for (const [key, value] of Object.entries(reqHeaders)) {
-    const lower = key.toLowerCase();
-    if (lower === "host" || lower === "connection" || lower === "content-length") {
-      continue;
-    }
-    forwardHeaders[key] = value;
-  }
-
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: forwardHeaders,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Upstream error: ${res.status} ${res.statusText}`);
-  }
-
-  const json = await res.json();
-
-  // Format assume: { success: true, data: "<encrypted base64>" } 
-  // ya { success: true, data: { ... } }
-  if (!json || json.success !== true || !json.data) {
-    return json; // maybe already decrypted / different format
-  }
-
-  let decryptedData;
-  if (typeof json.data === "string") {
-    decryptedData = decryptApiResponse(json.data);
-  } else {
-    decryptedData = json.data;
-  }
-
-  return {
-    success: true,
-    data: decryptedData,
-  };
-}
-
-/**
-
-
- * Main endpoint – frontend iss ko call karega
- *
- * POST /api/content-details
- * body: { content_id, course_id }
- */
-app.post("/api/content-details", async (req, res) => {
-  try {
-    const { content_id, course_id } = req.body || {};
-
-    if (!content_id || !course_id) {
-      return res.status(400).json({
-        success: false,
-        error: "content_id and course_id required",
-      });
-    }
-
-    const reqHeaders = req.headers;
-
-    const decrypted = await fetchAndDecryptContentDetails(
-      reqHeaders,
-      content_id,
-      course_id
-    );
-
-    // CORS
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Cookie, X-Requested-With"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET, POST, OPTIONS"
-    );
-
-    return res.json(decrypted);
-  } catch (err) {
-    console.error("Backend decrypt error:", err);
-    return res.status(500).json({
-      success: false,
-      error: String(err.message || err),
-    });
-  }
-});
-
-
-  //wrewfdsfdsf
+// 🎬 PLAY API
 
 
 
-
-
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-
-// --- Helper: decodePdfLink ---
-const decodePdfLink = (pdfLink, keyB64, version) => {
-  // pdfLink format: "encryptedData:base64Key"
-  const parts = String(pdfLink).split(':');
-  if (parts.length !== 2) return null;
-
-  const encryptedDataB64 = parts[0];
-  const keyB64FromLink = parts[1];
-
-  const keyBytes = Buffer.from(keyB64FromLink, 'base64');
-  const encryptedBytes = Buffer.from(encryptedDataB64, 'base64');
-
-  // NOTE: Algod guess hai; tum apna actual AppX/RWA decrypt function yahan use karo.
-  // Yahan AES-256-CBC pattern dikhaya hai example ke liye. [web:38]
-  const algorithm = 'aes-256-cbc';
-
-  // IV + encryptedText pattern assume kar rahe (jaise many AES examples). [web:38]
-  const parts2 = encryptedDataB64.split('.');
-  if (parts2.length !== 2) return null;
-
-  const iv = Buffer.from(parts2[0], 'base64');
-  const encryptedText = Buffer.from(parts2[1], 'base64');
-
-  const decipher = crypto.createDecipheriv(algorithm, keyBytes, iv);
-  let decrypted = decipher.update(encryptedText, undefined, 'utf8');
-  decrypted += decipher.final('utf8');
-
-  return decrypted; // yahi token/actual path hota hai
-};
-
-// --- Route: /decrypt-pdf-url ---
-const decryptPdfRoute = (req, res) => {
-  try {
-    const link = req.query.link;
-    const key = req.query.key;
-    const version = req.query.version || '1';
-
-    if (!link || !key) {
-      return res.status(400).json({
-        error: 'Missing link or key'
-      });
-    }
-
-    const token = decodePdfLink(link, key, version);
-    if (!token) {
-      return res.status(400).json({
-        error: 'Could not decrypt pdf link'
-      });
-    }
-
-    // Actual PDF URL pattern ko apne infra ke hisaab se adjust karo.
-    // Example: decrypted token already full URL ho sakta hai.
-    const pdfUrl = token.startsWith('http')
-      ? token
-      : `https://appx-content-v2.classx.co.in/${token}`;
-
-    return res.json({ pdfUrl });
-  } catch (err) {
-    console.error('decrypt-pdf-url error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-app.get('/decrypt-pdf-url', decryptPdfRoute);
-
-// --- Start server ---
-
-// OPTIONS preflight
-// GET /api/content-details?content_id=...&course_id=...
-app.get("/api/content-details", async (req, res) => {
-  try {
-    const content_id = req.query.content_id;
-    const course_id = req.query.course_id;
-
-    if (!content_id || !course_id) {
-      return res.status(400).json({
-        success: false,
-        error: "content_id and course_id required",
-      });
-    }
-
-    const reqHeaders = req.headers;
-
-    const decrypted = await fetchAndDecryptContentDetails(
-      reqHeaders,
-      content_id,
-      course_id
-    );
-
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Cookie, X-Requested-With"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET, POST, OPTIONS"
-    );
-
-    return res.json(decrypted);
-  } catch (err) {
-    console.error("Backend decrypt error (GET):", err);
-    return res.status(500).json({
-      success: false,
-      error: String(err.message || err),
-    });
-  }
-});
+//=============weqewqe==========
 
 //======== rtrtrrttt=====
 app.get("/api/vibrant/previous-live", async (req, res) => {
@@ -753,299 +543,119 @@ res.json(data);
     res.status(500).json({ error: err.toString() });
   }
 });
-
-//frytdrtdtsdf
 //========science===
- const axios = require('axios');
 
-// ✅ Fixed PW headers (access-control-allow-origin हटा, server side पे नहीं काम करता)
-const PENPENCIL_HEADERS = {
-  "Accept-Encoding": "gzip",
-  "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; SM-A707F Build/RP1A.200720.012)",
-  "authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3ODM2MTQxOTQuMzQxLCJkYXRhIjp7Il9pZCI6IjZhMmQ3NTBjYmRmMWQxZTM5YzE2ZDU5YyIsInVzZXJuYW1lIjoiNjM5MTA1MTI4MiIsImZpcnN0TmFtZSI6IkFrcCIsImxhc3ROYW1lIjoiIiwib3JnYW5pemF0aW9uIjp7Il9pZCI6IjVlYjM5M2VlOTVmYWI3NDY4YTc5ZDE4OSIsIndlYnNpdGUiOiJwaHlzaWNzd2FsbGFoLmNvbSIsIm5hbWUiOiJQaHlzaWNzd2FsbGFoIn0sInJvbGVzIjpbIjViMjdiZDk2NTg0MmY5NTBhNzc4YzZlZiJdLCJjb3VudHJ5R3JvdXAiOiJJTiIsIm9uZVJvbGVzIjpbXSwidHlwZSI6IlVTRVIifSwianRpIjoiemFUZ0FOQ3pTWjI2b1hwNEZWMkV6UV82YTJkNzUwY2JkZjFkMWUzOWMxNmQ1OWMiLCJpYXQiOjE3ODMwMDkzOTR9.akzuLzyKvndr8tarVoRFQX1g3zjdKCzEf2hbjh8hGrE",
-  "client-id": "ADMIN",
-  "client-type": "MOBILE",
-  "client-version": "538",
-  "content-type": "application/json",
-  "device-meta": "{\"APP_VERSION\":\"538\",\"APP_VERSION_NAME\":\"15.32.0\",\"DEVICE_MAKE\":\"Samsung\",\"DEVICE_MODEL\":\"SM-A707F\",\"OS_VERSION\":\"11\",\"PACKAGE_NAME\":\"xyz.penpencil.physicswala\",\"network\":\"wifi_data\",\"carrier\":\"UNDEFINED\"}",
-  "randomid": "3d3b49f068728fa3",
-  "referer": "https://android.pw.live"
-};
+  app.get("/api/science/previous-live", async (req, res) => {
+  try {
+    const courseid = req.query.course_id || req.query.c;
 
-// CORS middleware
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://Mtaiirus.pages.dev", "https://xstermataiirus.onrender.com/"); // ya * for testing
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type,Authorization,X-Requested-With,Origin,Accept"
-  );
-  res.setHeader("Access-Control-Allow-Credentials", "false");
+    if (!courseid) {
+      return res.status(400).json({ error: "Missing courseid" });
+    }
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
+    // External API call
+    const url = `${BASE}/api/scienceandfun/previous-live?course_id=${courseid}`;
+    
+    const response = await fetchfn(url);
 
-// Common proxy middleware (saare methods ke liye)
-const penpencilProxy = createProxyMiddleware({
-  target: "https://api.penpencil.co",
-  changeOrigin: true,
-  headers: {
-    ...PENPENCIL_HEADERS,
-    Host: "api.penpencil.co",
-    Origin: "https://android.pw.live",
-    Referer: "https://android.pw.live"
-  },
-  pathRewrite: (path) => path.replace(/^\/api\/penpencil/, ""),
-  onProxyReq: (proxyReq, req, res) => {
-    // Browser ka Origin hata do, hamara Origin set rahega
-    proxyReq.removeHeader("Origin");
-  },
-  onProxyRes: (proxyRes, req, res) => {
-    console.log("Penpencil status:", proxyRes.statusCode, req.method, req.url);
-  },
-  onError: (err, req, res) => {
-    console.error("Proxy error:", err);
-    res.status(500).json({ error: "Failed to proxy request to penpencil API", message: err.message });
-  }
-});
-
-app.use("/api/penpencil", penpencilProxy);
-app.all("/api/penpencil/*", penpencilProxy);
-
-// Test root
-app.get("/", (req, res) => {
-  res.send("Penpencil proxy running");
-});
-
-  
-
- // PW Headers constant - आपके दिए headers use कर रहे हैं
-const AUTHORIZATION = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjEyODc2MDAiLCJ0aW1lc3RhbXAiOjE3ODE0MDk4OTEsIml2X3ZlciI6Miwic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqRXlPRGMyTURBaUxDSmxiV0ZwYkNJNklqazFOVGs1TnpVek56QkFaMjFoYVd3dVkyOXRJaXdpYm1GdFpTSTZJaUlzSW5SbGJtRnVkRlI1Y0dVaU9pSjFjMlZ5SWl3aWRHVnVZVzUwVG1GdFpTSTZJbUZ5YldGMGFITmZaR0lpTENKMFpXNWhiblJKWkNJNklpSXNJbVJwYzNCdmMyRmliR1VpT21aaGJITmxmUS5EbmNwSzhSWWd6ZzJsSHUxVkZKaVluYjVGMjlwTk52eW1ZdUZqUkxIV004In0.ftduhO--p4Ku0CHqlfbstlPH9PezVtGmWYKaBmSv5UI";
-const USERID = "1287600";
-const AUTHTOKEN = "appxapi";
-
-// Common headers function
-function getCommonHeaders() {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Origin': 'https://armaths.akamai.net.in',
-    'Referer': 'https://armaths.akamai.net.in/',
-    'source': 'website',
-    'client-service': 'Appx',
-    'Device-Type': '',
-    'Authorization': AUTHORIZATION,
-    'User-Id': USERID,
-    'Auth-Key': AUTHTOKEN,
-    'X-Forwarded-For': '127.0.0.1',
-    'X-Real-IP': '127.0.0.1',
-  };
+if (!response.ok) {
+  return res.status(response.status).json({
+    error: "External API failed"
+  });
 }
 
-// 1. Proxy folder_contentsv3
-app.get('/api/folder-contents', async (req, res) => {
-  const { course_id, parent_id } = req.query;
-  
-  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/folder_contentsv3');
-  targetUrl.searchParams.set('course_id', course_id);
-  targetUrl.searchParams.set('parent_id', parent_id || '');
-  targetUrl.searchParams.set('windowsapp', 'false');
-  targetUrl.searchParams.set('start', '0');
-
-  try {
-    const response = await axios.get(targetUrl.toString(), {
-      headers: getCommonHeaders(),
-      timeout: 10000,
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Folder contents proxy error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.message,
-      status: error.response?.status
-    });
+const data = await response.json();
+res.json(data);
+  } catch (err) {
+    console.error("/api/science/previous-live error:", err);
+    res.status(500).json({ error: err.toString() });
   }
 });
 
-
-function safeBase64Decode(value) {
-  if (!value || typeof value !== 'string') return null;
+//=============454534534==========
+  app.post("/api/pw/login", async (req, res) => {
   try {
-    return Buffer.from(decodeURIComponent(value), 'base64').toString('utf8');
-  } catch (e) {
-    return null;
-  }
-}
+    const { phoneNumber, username } = req.body || {};
 
-app.get('/api/scienceandfun/url', (req, res) => {
-  try {
-    const intermediateUrl = safeBase64Decode(req.query.url);
-    const intermediateKey = safeBase64Decode(req.query.key);
-
-    if (!intermediateUrl || !intermediateKey) {
+    if (!phoneNumber || !username) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid url or key'
+        message: "phoneNumber and username are required"
       });
     }
 
-    const finalUrl = buildVideoUrlFromPayload(intermediateUrl);
-    const finalKey = extractKeyFromPayload(intermediateKey);
-
-    return res.json({
-      success: true,
-      data: { url: finalUrl, key: finalKey }
+    const upstream1 = await fetch(`${BASE}/api/pw/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*"
+      },
+      body: JSON.stringify({
+        phoneNumber,
+        username
+      })
     });
-  } catch (err) {
-    console.error(err);
+
+    const text = await upstream1.text();
+
+    res.status(upstream1.status);
+    res.setHeader(
+      "Content-Type",
+      upstream1.headers.get("content-type") || "application/json"
+    );
+    return res.send(text);
+  } catch (error) {
+    console.error("PW LOGIN ERROR:", error);
     return res.status(500).json({
       success: false,
-      message: 'Internal Server Error'
+      message: "Proxy error in /api/pw/login"
     });
   }
 });
-// 2. Proxy course_contents_by_live_status
-app.get('/api/live-courses', async (req, res) => {
-  const { course_id, start, live_status } = req.query;
-  
-  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/course_contents_by_live_status');
-  targetUrl.searchParams.set('course_id', course_id || '74');
-  targetUrl.searchParams.set('start', start || '-1');
-  targetUrl.searchParams.set('live_status', live_status || '1');
-
-  try {
-    const response = await axios.get(targetUrl.toString(), {
-      headers: getCommonHeaders(),
-      timeout: 10000,
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Live courses proxy error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.message,
-      status: error.response?.status
-    });
-  }
-});
-
-// 3. Proxy get_previous_live_videos
-app.get('/api/previous-live-videos', async (req, res) => {
-  const { course_id, start, folder_wise_course, userid } = req.query;
-  
-  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/get_previous_live_videos');
-  targetUrl.searchParams.set('course_id', course_id || '74');
-  targetUrl.searchParams.set('start', start || '0');
-  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
-  targetUrl.searchParams.set('userid', userid || USERID);
-
-  try {
-    const response = await axios.get(targetUrl.toString(), {
-      headers: getCommonHeaders(),
-      timeout: 10000,
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Previous live videos proxy error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.message,
-      status: error.response?.status
-    });
-  }
-});
-  app.get('/api/video-details', async (req, res) => {
-  const { course_id, video_id, ytflag, folder_wise_course, lc_app_api_url } = req.query;
-  
-  const targetUrl = new URL('https://armathsapi.akamai.net.in/get/fetchVideoDetailsById');
-  targetUrl.searchParams.set('course_id', course_id || '74');
-  targetUrl.searchParams.set('video_id', video_id);
-  targetUrl.searchParams.set('ytflag', ytflag || '0');
-  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
-  targetUrl.searchParams.set('lc_app_api_url', lc_app_api_url || '');
-
-  try {
-    const response = await axios.get(targetUrl.toString(), {
-      headers: getCommonHeaders(),
-      timeout: 10000,
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Video details proxy error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.message,
-      status: error.response?.status
-    });
-  }
-});
-// vikaramjeet
-  const AUTHORIZATION2 = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjE0OTQxMzgiLCJ0aW1lc3RhbXAiOjE3ODE4NDUzNTMsIml2X3ZlciI6Mywic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqRTBPVFF4TXpnaUxDSmxiV0ZwYkNJNkltTm9ZVzVrWVc1d2NtRnFZWEJoZEdrNU1UazRRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpqYUdGdVpHRnVJSEJ5WVdwaGNHRjBhU0lzSW5SbGJtRnVkRlI1Y0dVaU9pSjFjMlZ5SWl3aWRHVnVZVzUwVG1GdFpTSTZJbkpuZG1scmNtRnRhbVZsZEY5a1lpSXNJblJsYm1GdWRFbGtJam9pSWl3aVpHbHpjRzl6WVdKc1pTSTZabUZzYzJWOS5aaGpacUFiYXFuWlZUQkFBQTdYOHRtQ2ZpTWpMRjlLYloxYnNETHNIVWc4In0.aPfneNhOlCiI4aKqz6-a78RPMJ_tbvvonFw1S-Ozius";
-const USERID2 = "1494138";
-const AUTHTOKEN2 = "appxapi";
-
-// Common headers function
-function getCommonHeaders2() {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Origin': 'https://rankersgurukul.com',
-    'Referer': 'https://rankersgurukul.com/',
-    'source': 'website',
-    'client-service': 'Appx',
-    'Device-Type': '',
-    'Authorization': AUTHORIZATION2,
-    'User-Id': USERID2,
-    'Auth-Key': AUTHTOKEN2,
-    'X-Forwarded-For': '127.0.0.1',
-    'X-Real-IP': '127.0.0.1',
-  };
-}
-// Slides API Proxy (पहले जैसा)
-  app.get('/api/vikaram/video-details', async (req, res) => {
-  const { course_id, video_id, user, ytflag, folder_wise_course, lc_app_api_url } = req.query;
-  
-  const targetUrl = new URL('https://rgvikramjeetapi.classx.co.in/get/fetchVideoDetailsById');
-  targetUrl.searchParams.set('course_id', course_id || '74');
-  targetUrl.searchParams.set('video_id', video_id);
-  targetUrl.searchParams.set('user', user || '0');
-  targetUrl.searchParams.set('ytflag', ytflag || '0');
-  targetUrl.searchParams.set('folder_wise_course', folder_wise_course || '1');
-  targetUrl.searchParams.set('lc_app_api_url', lc_app_api_url || '');
-
-  try {
-    const response = await axios.get(targetUrl.toString(), {
-      headers: getCommonHeaders2(),
-      timeout: 10000,
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error('Video details proxy error:', error.message);
-    res.status(error.response?.status || 500).json({
-      error: error.message,
-      status: error.response?.status
-    });
-  }
-});
-  //=====xdcfdsfsd
-
-
-//=============454534534==========
-
-  //==========rty
-
-
-
 
 // PW VERIFY
+app.post("/api/pw/verify", async (req, res) => {
+  try {
+    const { otp, phoneNumber, username } = req.body || {};
 
+    if (!otp || !phoneNumber || !username) {
+      return res.status(400).json({
+        success: false,
+        message: "otp, phoneNumber and username are required"
+      });
+    }
+
+    const upstream1 = await fetch(`${BASE_URL}/api/pw/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*"
+      },
+      body: JSON.stringify({
+        otp,
+        phoneNumber,
+        username
+      })
+    });
+
+    const text = await upstream1.text();
+
+    res.status(upstream1.status);
+    res.setHeader(
+      "Content-Type",
+      upstream.headers.get("content-type") || "application/json"
+    );
+    return res.send(text);
+  } catch (error) {
+    console.error("PW VERIFY ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Proxy error in /api/pw/verify"
+    });
+  }
+});
   // -==========temp mail ===========
   
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BBw7Jxh7FSFdTT2GrcXb9YFgcbCEKVoJWj4vSKu_pzkghrq3VgWznY7oNLxufJUrZWhkzJKIyTzTrXeSPlQgoLI";
@@ -1135,7 +745,44 @@ app.get("/api/subscriptions", (req, res) => {
   // ========= YOUR TWO PROXY ROUTES =========
 
   // Endpoint for /api/batches
- 
+  app.get("/api/batches", async (req, res) => {
+    try {
+      const r = await fetchfn(
+        `${BASE}/api/pw/batches`
+      );
+      const data = await r.json();
+      res.json(data);
+    } catch (e) {
+      console.error("/api/batches error:", e);
+      res.json({ error: e.toString() });
+    }
+  });
+//===============ytryutuytyu======
+    app.get("/api/science/batches", async (req, res) => {
+    try {
+      const r = await fetchfn(
+        `${BASE}/api/scienceandfun/batches`
+      );
+      const data = await r.json();
+      res.json(data);
+    } catch (e) {
+      console.error("/api/batches error:", e);
+      res.json({ error: e.toString() });
+    }
+  });
+  //===================science====
+     app.get("/api/science/batches", async (req, res) => {
+    try {
+      const r = await fetchfn(
+        `${BASE}/api/scienceandfun/batches`
+      );
+      const data = await r.json();
+      res.json(data);
+    } catch (e) {
+      console.error("/api/science/batches error:", e);
+      res.json({ error: e.toString() });
+    }
+  });
 //==============
  app.get("/api/vibrant/content", async (req, res) => {
   try {
@@ -1262,8 +909,6 @@ app.get("/api/vibrant/video-details", async (req, res) => {
     res.status(500).json({ error: err.toString() });
   }
 });
-
-
   //===================science========
   app.get("/api/science/video-details", async (req, res) => {
   try {
@@ -1292,7 +937,32 @@ app.get("/api/vibrant/video-details", async (req, res) => {
   }
 });
   //ddfddfdfdf=======
+app.get("/api/nexttoppers/all-content", async (req, res) => {
+  try {
+    // Support both old (r/e) and new (courseid/id) param formats
+    const courseid = req.query.r || req.query.courseid;
+    const id = req.query.e || req.query.id;
 
+    if (!courseid) {
+      return res.status(400).json({ error: "Missing courseid (r or courseid)" });
+    }
+
+    const url = new URL(`${BASE}/api/nexttoppers/all-content`);
+    url.searchParams.set("courseid", courseid);
+
+    if (id) {
+      url.searchParams.set("id", id);
+    }
+
+    const response = await fetchfn(url.toString());
+    const data = await response.json();
+
+    res.json(data);
+  } catch (err) {
+    console.error("/api/nexttoppers/all-content error:", err);
+    res.status(500).json({ error: err.toString() });
+  }
+});
 //-===============00-99
 function buildCloudFrontUrl(pathOrUrl) {
   if (!pathOrUrl) return null;
@@ -1405,7 +1075,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["Mtaiirus.pages.dev","localhost:5600", "www.notjitu.in", "notjitu.in","jitu-test.vercel.app","https://learnbyakp.learnbyakp.workers.dev","https://xstermataiirus.onrender.com","xstermataiirus.onrender.com"];
+ const allowedSites = ["Mtaiirus.pages.dev","localhost:5600", "www.notjitu.in", "notjitu.in","jitu-test.vercel.app","xstermataiirus.onrender.com"];
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1447,135 +1117,6 @@ if (!allowedSites.some(site => referer.includes(site))) {
 
     }
 
-});
-
-  app.get("/proxy-m3u8", async (req, res) => {
-  try {
-    const vid = req.query.vid;
-
-    if (!vid) {
-      return res.status(400).json({ error: "vid query param required" });
-    }
-
-    const upstreamUrl = `https://stream.pimaxer.in/${encodeURIComponent(vid)}/master.m3u8`;
-
-    const upstream = await fetch(upstreamUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent": req.headers["user-agent"] || "Mozilla/5.0",
-        "Accept": req.headers["accept"] || "*/*",
-        "Referer": req.headers["referer"] || "https://stream.pimaxer.in/",
-        "Origin": "https://stream.pimaxer.in"
-      }
-    });
-
-    res.status(upstream.status);
-
-    upstream.headers.forEach((value, key) => {
-      const k = key.toLowerCase();
-      if (!["content-encoding", "transfer-encoding", "content-length", "connection"].includes(k)) {
-        res.setHeader(key, value);
-      }
-    });
-
-    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-
-    if (!upstream.body) {
-      return res.end();
-    }
-
-    const reader = upstream.body.getReader();
-    const encoder = new TextDecoder();
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-
-    res.end();
-  } catch (err) {
-    res.status(500).json({ error: "Proxy failed", details: err.message });
-  }
-});
-   app.get("/api/get-video", async (req, res) => {
-  try {
-    const { batchId, lectureId, subjectId } = req.query;
-
-    if (!batchId || !lectureId || !subjectId) {
-      return res.status(400).json({
-        error: "Missing required query params",
-        required: ["batchId", "lectureId", "subjectId"],
-      });
-    }
-
-    const targetUrl =
-      `https://videos.iownprince5.workers.dev/` +
-      `?batchId=${encodeURIComponent(batchId)}` +
-      `&childId=${encodeURIComponent(lectureId)}`;
-
-    const upstream = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        // Forward token if your upstream needs it
-        ...(req.headers["x-pw-token"] ? { "X-PW-Token": req.headers["x-pw-token"] } : {}),
-      },
-    });
-
-    const contentType = upstream.headers.get("content-type") || "application/json";
-    res.status(upstream.status);
-    res.setHeader("Content-Type", contentType);
-
-    const body = await upstream.text();
-    res.send(body);
-  } catch (err) {
-    res.status(500).json({
-      error: "Proxy failed",
-      message: err.message,
-    });
-  }
-});
-
-  //pw server
-  app.get("/api/get-video1", async (req, res) => {
-  try {
-    const { batchId, lectureId, subjectId } = req.query;
-
-    if (!batchId || !lectureId || !subjectId) {
-      return res.status(400).json({
-        error: "Missing required query params",
-        required: ["batchId", "lectureId", "subjectId"],
-      });
-    }
-
-    const targetUrl =
-      `https://pw.modgalaxy.in/api/get-video` +
-      `?batchId=${encodeURIComponent(batchId)}` +
-      `&lectureId=${encodeURIComponent(lectureId)}` +
-      `&subjectId=${encodeURIComponent(subjectId)}`;
-
-    const upstream = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        // Forward token if your upstream needs it
-        ...(req.headers["x-pw-token"] ? { "X-PW-Token": req.headers["x-pw-token"] } : {}),
-      },
-    });
-
-    const contentType = upstream.headers.get("content-type") || "application/json";
-    res.status(upstream.status);
-    res.setHeader("Content-Type", contentType);
-
-    const body = await upstream.text();
-    res.send(body);
-  } catch (err) {
-    res.status(500).json({
-      error: "Proxy failed",
-      message: err.message,
-    });
-  }
 });
 
 /**
@@ -1771,10 +1312,68 @@ app.get("/api/vibrant/live", async (req, res) => {
   }
 });
   //======live of mission jeet=====
- 
+  app.get("/api/missionjeet/live", async (req, res) => {
+  try {
+    const response = await fetch(
+      `${BASE}/api/missionjeet/live`,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "application/json",
+          "Origin": "https://Mtaiirusapi.onrender.com",
+          "Referer": "https://Mtaiirusapi.onrender.com/"
+        }
+      }
+    );
+
+    const text = await response.text();
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "application/json");
+
+    res.status(response.status).send(text);
+
+  } catch (error) {
+    console.error("LIVE API ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch live classes"
+    });
+  }
+});
   
   //====================asdasdasd============
+app.get("/api/nexttoppers/live", async (req, res) => {
+  try {
+    const response = await fetch(
+      `${BASE}/api/nexttoppers/live`,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "application/json",
+          "Origin": "https://Mtaiirusapi.onrender.com",
+          "Referer": "https://Mtaiirusapi.onrender.com/"
+        }
+      }
+    );
 
+    const text = await response.text();
+
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "application/json");
+
+    res.status(response.status).send(text);
+
+  } catch (error) {
+    console.error("LIVE API ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch live classes"
+    });
+  }
+});
 //================fgdfg==========
 
   app.get('/api/pw/dpp-quiz-proxy', async (req, res) => {
@@ -2013,7 +1612,58 @@ app.get("/api/tempmail/health", (req, res) => {
   // Endpoint for /api/pw/li
 
 //=============pw batch details
+const UPSTREAM = `${BASE}`;
 
+app.post("/api/pw/live", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  try {
+    const batchId = req.body?.batchId;
+
+    if (!batchId) {
+      return res.status(400).json({
+        success: false,
+        message: "batchId required",
+      });
+    }
+
+    const upstream = await fetchfn(`${BASE}/api/pw/live`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ batchId }),
+    });
+
+    const text = await upstream.text();
+
+    console.log("LIVE upstream status:", upstream.status);
+    console.log("LIVE upstream body:", text);
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).send(text);
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    return res.send(text);
+  } catch (err) {
+    console.error("live route error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
+
+app.options("/api/pw/live", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return res.sendStatus(204);
+});
 
 /**
  * 2) BATCH DETAILS API
@@ -2021,7 +1671,47 @@ app.get("/api/tempmail/health", (req, res) => {
  * POST /api/pw/batchdetails
  * body: { searchParams: { BatchId: "..." } }
  */
+app.post("/api/pw/batchdetails", async (req, res) => {
+  try {
+    const batchId = req.body?.searchParams?.BatchId;
 
+    if (!batchId) {
+      return res.status(400).json({
+        success: false,
+        message: "searchParams.BatchId required",
+      });
+    }
+
+    const upstream1 = await fetchfn(`${CHANGE}/api/pw/batchdetails`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        searchParams: {
+          BatchId: batchId,
+        },
+      }),
+    });
+
+    const text = await upstream1.text();
+
+    if (!upstream1.ok) {
+      console.error("batchdetails upstream error:", upstream1.status, text);
+      return res.status(upstream1.status).send(text);
+    }
+
+    res.setHeader("Content-Type", "application/json");
+    return res.send(text);
+  } catch (err) {
+    console.error("batchdetails route error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+});
 /**
  * Optional health check
  */
@@ -2029,34 +1719,413 @@ app.get("/api/test", (req, res) => {
   res.json({ ok: true });
 });
 
-
+  // Endpoint for /api/pw/topics
+app.get("/api/pw/topics", async (req, res) => {
+  return proxyGet(req, res, "/api/pw/topics", {
+    BatchId: "BatchId",
+    SubjectId: "SubjectId",
+  });
+});
 
   //================mobile otp====
 
   
   //============dasdddd=====
+  async function proxyJson(req, res, targetUrl, extraHeaders = {}) {
+  try {
+    const upstream = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*",
+        ...extraHeaders,
+      },
+    });
+
+    const contentType = upstream.headers.get("content-type") || "";
+    const text = await upstream.text();
+
+    res.status(upstream.status);
+    if (contentType) res.setHeader("Content-Type", contentType);
+    return res.send(text);
+  } catch (err) {
+    console.error("Proxy error:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Proxy request failed",
+    });
+  }
+}
 
   //=========eter========
- 
+  app.get("/api/pw/video-url-details", async (req, res) => {
+  const { batchId, subjectId, childId } = req.query;
+
+  if (!batchId || !subjectId || !childId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing batchId, subjectId, or childId",
+    });
+  }
+
+  const url =
+    `${CHANGE}/api/pw/video-url-details?batchId=${encodeURIComponent(batchId)}` +
+    `&subjectId=${encodeURIComponent(subjectId)}` +
+    `&childId=${encodeURIComponent(childId)}`;
+
+  return proxyJson(req, res, url);
+});
+/**
+ * 1) /api/pw/video
+ * frontend call:
+ * /api/pw/video?batchId=...&subjectId=...&childId=...
+ */
+app.get("/api/pw/video", async (req, res) => {
+  const { batchId, subjectId, childId } = req.query;
+
+  if (!batchId || !subjectId || !childId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing batchId, subjectId, or childId",
+    });
+  }
+
+  const url =
+    `${BASE}/api/pw/video?batchId=${encodeURIComponent(batchId)}` +
+    `&subjectId=${encodeURIComponent(subjectId)}` +
+    `&childId=${encodeURIComponent(childId)}`;
+
+  return proxyJson(req, res, url);
+});
+
+/**
+ * 2) /api/pw/videoplay
+ * frontend call:
+ * /api/pw/videoplay?batchId=...&subjectId=...&childId=...
+ */
+app.get("/api/pw/videoplay", async (req, res) => {
+  const { batchId, subjectId, childId } = req.query;
+
+  if (!batchId || !subjectId || !childId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing batchId, subjectId, or childId",
+    });
+  }
+
+  const url =
+    `${BASE}/api/pw/videoplay?batchId=${encodeURIComponent(batchId)}` +
+    `&subjectId=${encodeURIComponent(subjectId)}` +
+    `&childId=${encodeURIComponent(childId)}`;
+
+  return proxyJson(req, res, url);
+});
+
+/**
+ * 3) /api/pw/get-url
+ * frontend call:
+ * /api/pw/get-url?batchId=...&subjectId=...&childId=...
+ */
+app.get("/api/pw/get-url", async (req, res) => {
+  const { batchId, subjectId, childId } = req.query;
+
+  if (!batchId || !subjectId || !childId) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing batchId, subjectId, or childId",
+    });
+  }
+
+  const url =
+    `${CHANGE}/api/pw/get-url?batchId=${encodeURIComponent(batchId)}` +
+    `&subjectId=${encodeURIComponent(subjectId)}` +
+    `&childId=${encodeURIComponent(childId)}`;
+
+  return proxyJson(req, res, url);
+});
 
 /**
  * 4) /api/pw/attachments-url
  * frontend call:
  * /api/pw/attachments-url?BatchId=...&SubjectId=...&ContentId=...
  */
+app.get("/api/pw/attachment-link", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
 
+    const batchId = req.query.batchId || req.query.BatchId;
+    const subjectId = req.query.subjectId || req.query.SubjectId;
+    const scheduleId = req.query.scheduleId || req.query.ContentId || req.query.contentId;
+
+    if (!batchId || !subjectId || !scheduleId) {
+      return res.status(400).json({
+        success: false,
+        error: "batchId, subjectId, and scheduleId are required",
+        received: {
+          batchId,
+          subjectId,
+          scheduleId,
+          query: req.query
+        }
+      });
+    }
+
+    const upstreamUrl =
+      `${CHANGE}/api/pw/attachment-link` +
+      `?batchId=${encodeURIComponent(batchId)}` +
+      `&subjectId=${encodeURIComponent(subjectId)}` +
+      `&scheduleId=${encodeURIComponent(scheduleId)}`;
+
+    const upstream = await fetch(upstreamUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    const text = await upstream.text();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { data: text };
+    }
+
+    return res.status(200).json({
+      data: parsed?.data || parsed
+    });
+
+  } catch (error) {
+    console.error("attachment-link proxy error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error while fetching attachment-link",
+      details: error.message
+    });
+  }
+});
+app.get("/api/pw/attachment-url", async (req, res) => {
+  try {
+    const { BatchId, SubjectId, ContentId } = req.query;
+
+    if (!BatchId || !SubjectId || !ContentId) {
+      return res.status(400).json({
+        success: false,
+        error: "BatchId, SubjectId and ContentId are required"
+      });
+    }
+
+    const upstreamUrl =
+      `${CHANGE}/api/pw/attachments-url` +
+      `?BatchId=${encodeURIComponent(BatchId)}` +
+      `&SubjectId=${encodeURIComponent(SubjectId)}` +
+      `&ContentId=${encodeURIComponent(ContentId)}`;
+
+    const upstream = await fetch(upstreamUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    const text = await upstream.text();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { data: text };
+    }
+
+    return res.status(200).json({
+      success: true,
+      upstreamStatus: upstream.status,
+      data: parsed?.data || parsed
+    });
+
+  } catch (error) {
+    console.error("attachments-url proxy error:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error while fetching attachment-url",
+      details: error.message
+    });
+  }
+});
+
+  
 /**
  * 5) /api/pw/kid
  * frontend call:
  * /api/pw/kid?mpdUrl=...
  */
+app.get("/api/pw/kid", async (req, res) => {
+  const { mpdUrl } = req.query;
 
+  if (!mpdUrl) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing mpdUrl",
+    });
+  }
+
+  const url = `${CHANGE}/api/pw/kid?mpdUrl=${encodeURIComponent(mpdUrl)}`;
+  return proxyJson(req, res, url);
+});
+  
 
 /**
  * 6) /api/pw/otp
  * frontend call:
  * /api/pw/otp?kid=...
  */
+app.get("/api/pw/otp", async (req, res) => {
+  const { kid } = req.query;
+
+  if (!kid) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing kid",
+    });
+  }
+
+  const url = `${BASE}/api/pw/otp?kid=${encodeURIComponent(kid)}`;
+  return proxyJson(req, res, url);
+});
+
+
+//===========corckes====
+  function setCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+app.options("*", (req, res) => {
+  setCors(res);
+  res.sendStatus(204);
+});
+
+async function proxyGet(req, res, upstreamPath, queryMap = null) {
+  try {
+    setCors(res);
+
+    const params = new URLSearchParams();
+
+    if (queryMap) {
+      for (const [from, to] of Object.entries(queryMap)) {
+        const value = req.query[from];
+        if (value !== undefined && value !== null && value !== "") {
+          params.set(to, value);
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(req.query)) {
+        if (value !== undefined && value !== null && value !== "") {
+          params.set(key, value);
+        }
+      }
+    }
+
+    const url = `${BASE}${upstreamPath}?${params.toString()}`;
+    const upstream = await fetchfn(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    const contentType = upstream.headers.get("content-type") || "application/json";
+    const text = await upstream.text();
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).type(contentType).send(text);
+    }
+
+    return res.status(200).type(contentType).send(text);
+  } catch (err) {
+    console.error(`Proxy error for ${upstreamPath}:`, err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+  
+//===========656567============
+app.get("/api/pw/datacontent", async (req, res) => {
+  return proxyGet(req, res, "/api/pw/datacontent", {
+    batchId: "batchId",
+    subjectSlug: "subjectSlug",
+    topicSlug: "topicSlug",
+    contentType: "contentType",
+  });
+});
+// ================= HELPER =================
+const safeFetch = async (url) => {
+  const res = await fetchfn(url);
+  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  return res.json();
+};
+// ==========343=============
+
+  
+// ================= DATACONTENT =================
+app.get("/api/pw/videonew", async (req, res) => {
+  return proxyGet(req, res, "/api/pw/videonew", {
+    batchId: "batchId",
+    subjectId: "subjectId",
+    childId: "childId",
+  });
+});
+// ================= VIDEO COMBINED =================
+app.get("/api/pw/videosuper", async (req, res) => {
+  return proxyGet(req, res, "/api/pw/videosuper", {
+    batchId: "batchId",
+    childId: "childId",
+  });
+});
+
+// ================= VIDEO PLAY =================
+
+// ================= VIEW =================
+app.get("/api/pw/view", async (req, res) => {
+  try {
+    setCors(res);
+
+    const { url, filename } = req.query;
+    if (!url) {
+      return res.status(400).send("Missing url");
+    }
+
+    const upstream = await fetchfn(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "*/*",
+      },
+    });
+
+    const contentType =
+      upstream.headers.get("content-type") || "application/octet-stream";
+
+    const buffer = await upstream.arrayBuffer();
+
+    res.setHeader("Content-Type", contentType);
+    if (filename) {
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    }
+    return res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error("view error:", err);
+    return res.status(500).send(err.message);
+  }
+});
 
 // ================= DOWNLOAD =================
 app.get("/api/pw/download", async (req, res) => {
