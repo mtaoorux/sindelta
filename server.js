@@ -774,7 +774,7 @@ const PENPENCIL_HEADERS = {
 
 // CORS middleware
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://Mtaiirus.pages.dev"); // ya * for testing
+  res.setHeader("Access-Control-Allow-Origin", "https://Mtaiirus.pages.dev", "https://xstermataiirus.onrender.com/"); // ya * for testing
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
