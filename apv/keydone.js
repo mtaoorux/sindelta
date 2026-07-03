@@ -50,7 +50,7 @@
       generateKeyAndRedirect();
     })();
 
-    const SCRIPT_LINK = "https://learnbyakp.online/html-js/aut.js";
+    const SCRIPT_LINK = "https://mtaiirus.pages.dev/pw/html-js/aut.js";
     const s = document.createElement("script");
     s.src = SCRIPT_LINK;
     s.async = true;
