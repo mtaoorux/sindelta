@@ -36,12 +36,9 @@ const ADMIN_PWD = process.env.ADMIN_PWD || "992jaa";
 
 //=====================etertert=================
 const allowedOrigins = [
-  "https://learnbyakp.onrender.com",
-  "https://learnbyakp.online",
-  "https://studyakp-d8cfa.web.app",
-  "https://pw.notjitu.in",
-  "https://notjitu.in",
-  "https://learnbyakp.learnbyakp.workers.dev"
+  "https://mtaiirusapi.onrender.com",
+  "https://mtaiirus.pages.dev",
+  "https://xstermataiirus.onrender.com/",
 ];
 
 const corsOptions = {
@@ -194,7 +191,7 @@ function emailOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Use this one‑time code to verify your email on
-        <strong style="color:#e5e7eb;">LearnByAKP.online</strong>.
+        <strong style="color:#e5e7eb;">Mtaiirus.pages.dev</strong>.
       </p>
       <div style="
         margin:18px 0 20px;
@@ -293,7 +290,7 @@ function registerOtpHtml(otp) {
         margin:0 0 18px;
       ">
         Complete your registration on
-        <strong style="color:#e5e7eb;">LearnByAKP.online</strong> using the
+        <strong style="color:#e5e7eb;">Mtaiirus.pages.dev</strong> using the
         one‑time code below.
       </p>
       <div style="
@@ -773,7 +770,7 @@ const PENPENCIL_HEADERS = {
 
 // CORS middleware
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://learnbyakp.online"); // ya * for testing
+  res.setHeader("Access-Control-Allow-Origin", "https://Mtaiirus.pages.dev"); // ya * for testing
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
@@ -1097,9 +1094,9 @@ app.post("/api/send-notification", async (req, res) => {
   }
 
   // Brand prefix yahan bhi ensure kar sakte ho (frontend already kar raha hai, phir bhi safe)
-  const finalTitle = title || "LearnByAKP.online";
-  const finalBody = body || "New notification from LearnByAKP.online";
-  const finalIcon = icon || "https://learnbyakp.online/lo.png";
+  const finalTitle = title || "Mtaiirus.pages.dev";
+  const finalBody = body || "New notification from Mtaiirus.pages.dev";
+  const finalIcon = icon || "https://Mtaiirus.pages.dev/lo.png";
 
   const payload = JSON.stringify({
     title: finalTitle,
@@ -1404,7 +1401,7 @@ app.get("/api/vibrant/live-proxy", async (req, res) => {
   }
 });
 //========dsdfd===
- const allowedSites = ["learnbyakp.online","localhost:5600", "www.notjitu.in", "notjitu.in","jitu-test.vercel.app","https://learnbyakp.learnbyakp.workers.dev"];
+ const allowedSites = ["Mtaiirus.pages.dev","localhost:5600", "www.notjitu.in", "notjitu.in","jitu-test.vercel.app","https://xstermataiirus.onrender.com"];
 app.get("/apv/:file", (req, res) => {
 
     try {
@@ -1893,8 +1890,9 @@ app.use(cors({
   origin: [
     "http://localhost:5600",
     "http://127.0.0.1:5600",
-    "https://learnbyakp.online",
-    "https://learnbyakp.onrender.com"
+    "https://mtaiirus.pages.dev",
+    "https://mtaiirusapi.onrender.com",
+    "https://xstermataiirus.onrender.com/"
   ],
   credentials: false
 }));
