@@ -126,12 +126,66 @@ app.get("/", (req, res) => {
     status: "running",
     message: "Vibrant Academy API Wrapper",
     endpoints: {
-      video: "/video/:courseId/:videoId/:cls"
+      video: "/vibrant/video/:courseId/:videoId/:cls"
     }
   });
 });
 
-// Decrypted qualities
+// Vibrant API routes
+const vibrantRouter = express.Router();
+
+// Health check for vibrant routes
+vibrantRouter.get("/", (req, res) => {
+  res.json({
+    status: "running",
+    message: "Vibrant Academy API Wrapper",
+    endpoints: {
+      video: "/vibrant/video/:courseId/:videoId/:cls"
+    }
+  });
+});
+
+// Decrypted qualities endpoint
+vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
+  try {
+    const { courseId, videoId, cls } = req.params;
+
+    const apiJson = await fetchVideoDetailsById(courseId, videoId, cls);
+    const data = apiJson.data;
+
+    if (!data) {
+      return res.status(500).json({
+        success: false,
+        error: "No data field in response",
+      });
+    }
+
+    const qualities = buildQualitiesFromData(data);
+
+    res.json({
+      success: true,
+      courseId,
+      videoId,
+      class: cls,
+      title: data.Title,
+      encType: data.enc_type,
+      iv_string: data.iv_string,
+      qualities,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/video:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch/decrypt",
+      message: err.message,
+    });
+  }
+});
+
+// Mount the vibrant router
+app.use("/vibrant", vibrantRouter);
+
+// Keep the old route for backward compatibility
 app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
@@ -170,4 +224,5 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
 });
