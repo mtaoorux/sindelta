@@ -25,9 +25,6 @@ const auth12 =
 const auth11 =
   "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjY4NjQxIiwidGltZXN0YW1wIjoxNzg0Mjc1NTQ0LCJpdl92ZXIiOjMsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJalk0TmpReElpd2laVzFoYVd3aU9pSTVOalV4TlRVNU1UWTBRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpMZFhOb1lXZHlZU0JRWVd3aUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKMmFXSnlZVzUwWVdOaFpHVnRlV3R2ZEdGZlpHSWlMQ0owWlc1aGJuUkpaQ0k2SWlJc0ltUnBjM0J2YzJGaWJHVWlPbVpoYkhObGZRLkhnVURtTFBueWhxaVVaNF9qVVgzTHVUX1FLVUI1TzR1WGNGVWV6YTBBY3MifQ.65NI2ur5DLJqcNVqff13fzCjWeaMlb16vfkNYYWvCi8";
 
-// ==========================================
-// VIBRANT ACADEMY FUNCTIONS
-// ==========================================
 function getCreds(cls) {
   if (cls === "12" || cls === "11") {
     return cls === "12" 
@@ -279,10 +276,10 @@ async function scanMissionjeetForLiveContent(courseId, maxDepth = 5) {
 }
 
 // ==========================================
-// MAIN ROUTES
+// VIBRANT ACADEMY ROUTES
 // ==========================================
 
-// Health check
+// Health check route
 app.get("/", (req, res) => {
   res.json({
     status: "running",
@@ -310,15 +307,13 @@ app.get("/", (req, res) => {
   });
 });
 
-// ==========================================
-// VIBRANT ACADEMY ROUTES
-// ==========================================
+// Vibrant API routes
 const vibrantRouter = express.Router();
 
 vibrantRouter.get("/", (req, res) => {
   res.json({
     status: "running",
-    platform: "vibrant",
+    message: "Vibrant Academy API Wrapper",
     endpoints: {
       video: "/vibrant/video/:courseId/:videoId/:cls"
     }
@@ -328,6 +323,7 @@ vibrantRouter.get("/", (req, res) => {
 vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
+
     const apiJson = await fetchVideoDetailsById(courseId, videoId, cls);
     const data = apiJson.data;
 
@@ -362,10 +358,11 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
 
 app.use("/vibrant", vibrantRouter);
 
-// Keep backward compatibility
+// Keep the old route for backward compatibility
 app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
+
     const apiJson = await fetchVideoDetailsById(courseId, videoId, cls);
     const data = apiJson.data;
 
@@ -403,11 +400,10 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
 // ==========================================
 const missionjeetRouter = express.Router();
 
-// Health check for missionjeet
 missionjeetRouter.get("/", (req, res) => {
   res.json({
     status: "running",
-    platform: "missionjeet",
+    message: "Missionjeet API Wrapper",
     endpoints: {
       overview: "/missionjeet/course/:courseId/overview",
       content: "/missionjeet/course/:courseId/content",
@@ -420,14 +416,12 @@ missionjeetRouter.get("/", (req, res) => {
   });
 });
 
-// Get Course Overview
 missionjeetRouter.get('/course/:courseId/overview', async (req, res) => {
     const { courseId } = req.params;
     const result = await getMissionjeetCourseOverview(courseId);
     res.status(result.success ? 200 : (result.status || 500)).json(result);
 });
 
-// Get Course Content
 missionjeetRouter.get('/course/:courseId/content', async (req, res) => {
     const { courseId } = req.params;
     const { folder_id = "0", limit = "1000", page = "1" } = req.query;
@@ -435,7 +429,6 @@ missionjeetRouter.get('/course/:courseId/content', async (req, res) => {
     res.status(result.success ? 200 : (result.status || 500)).json(result);
 });
 
-// Get Media Details
 missionjeetRouter.get('/media/:contentId', async (req, res) => {
     const { contentId } = req.params;
     const { courseId } = req.query;
@@ -451,7 +444,6 @@ missionjeetRouter.get('/media/:contentId', async (req, res) => {
     res.status(result.success ? 200 : (result.status || 500)).json(result);
 });
 
-// Get Content Details (PDF/Document Support)
 missionjeetRouter.get('/content-details/:contentId', async (req, res) => {
     const { contentId } = req.params;
     const { courseId } = req.query;
@@ -467,7 +459,6 @@ missionjeetRouter.get('/content-details/:contentId', async (req, res) => {
     res.status(result.success ? 200 : (result.status || 500)).json(result);
 });
 
-// Scan for Live Content
 missionjeetRouter.get('/course/:courseId/live', async (req, res) => {
     const { courseId } = req.params;
     const { maxDepth = 5 } = req.query;
@@ -487,7 +478,6 @@ missionjeetRouter.get('/course/:courseId/live', async (req, res) => {
     }
 });
 
-// Discover courses
 missionjeetRouter.get('/discover', async (req, res) => {
     const COURSE_IDS = [];
     for (let i = 185; i >= 184; i--) COURSE_IDS.push(i);
@@ -528,7 +518,6 @@ missionjeetRouter.get('/discover', async (req, res) => {
     });
 });
 
-// Generic Proxy
 missionjeetRouter.post('/proxy', async (req, res) => {
     const { target_url, method = 'POST', payload = null } = req.body;
     
@@ -543,28 +532,7 @@ missionjeetRouter.post('/proxy', async (req, res) => {
     res.status(result.success ? 200 : (result.status || 500)).json(result);
 });
 
-// Mount missionjeet router
 app.use("/missionjeet", missionjeetRouter);
-
-// ==========================================
-// ERROR HANDLING
-// ==========================================
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found',
-    path: req.originalUrl
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.error('Server Error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    message: err.message
-  });
-});
 
 // ==========================================
 // START SERVER
@@ -576,20 +544,7 @@ app.listen(PORT, () => {
   console.log(`🌐 URL: http://localhost:${PORT}`);
   console.log(`========================================`);
   console.log(`📚 Available Platforms:`);
-  console.log(`  🎓 Vibrant Academy: /vibrant/*`);
-  console.log(`  🎯 Missionjeet: /missionjeet/*`);
-  console.log(`========================================`);
-  console.log(`📍 Vibrant Endpoints:`);
-  console.log(`  GET  /vibrant/video/:courseId/:videoId/:cls`);
-  console.log(`📍 Missionjeet Endpoints:`);
-  console.log(`  GET  /missionjeet/course/:courseId/overview`);
-  console.log(`  GET  /missionjeet/course/:courseId/content`);
-  console.log(`  GET  /missionjeet/course/:courseId/live`);
-  console.log(`  GET  /missionjeet/media/:contentId?courseId=xxx`);
-  console.log(`  GET  /missionjeet/content-details/:contentId?courseId=xxx`);
-  console.log(`  GET  /missionjeet/discover`);
-  console.log(`  POST /missionjeet/proxy`);
+  console.log(`  🎓 Vibrant Academy: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
+  console.log(`  🎯 Missionjeet: http://localhost:${PORT}/missionjeet/*`);
   console.log(`========================================`);
 });
-
-module.exports = app;
