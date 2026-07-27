@@ -1,10 +1,19 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ==========================================
+// VIBRANT ACADEMY CONFIGURATION
+// ==========================================
 const VIBRANT_API = "https://vibrantacademykotaapi.akamai.net.in";
 
 const id12 = "10275";
@@ -16,6 +25,9 @@ const auth12 =
 const auth11 =
   "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjY4NjQxIiwidGltZXN0YW1wIjoxNzg0Mjc1NTQ0LCJpdl92ZXIiOjMsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJalk0TmpReElpd2laVzFoYVd3aU9pSTVOalV4TlRVNU1UWTBRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpMZFhOb1lXZHlZU0JRWVd3aUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKMmFXSnlZVzUwWVdOaFpHVnRlV3R2ZEdGZlpHSWlMQ0owWlc1aGJuUkpaQ0k2SWlJc0ltUnBjM0J2YzJGaWJHVWlPbVpoYkhObGZRLkhnVURtTFBueWhxaVVaNF9qVVgzTHVUX1FLVUI1TzR1WGNGVWV6YTBBY3MifQ.65NI2ur5DLJqcNVqff13fzCjWeaMlb16vfkNYYWvCi8";
 
+// ==========================================
+// VIBRANT ACADEMY FUNCTIONS
+// ==========================================
 function getCreds(cls) {
   if (cls === "12" || cls === "11") {
     return cls === "12" 
@@ -120,36 +132,202 @@ async function fetchVideoDetailsById(courseId, videoId, cls) {
   return res.data;
 }
 
-// Health check route
+// ==========================================
+// MISSIONJEET (NEXTTOPPERS) CONFIGURATION
+// ==========================================
+const MISSIONJEET_CONFIG = {
+    NT_HEADERS: {
+        'accept': 'application/json, text/plain, */*',
+        'app_id': '1772100600',
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjozMTY4MDcyLCJhcHBfaWQiOiIxNzcyMTAwNjAwIiwiZGV2aWNlX2lkIjoiNmZiYzk3OGYtYmEzZC00ZjcyLTg2ZTItZGI3OGI1MzY3YzQwIiwicGxhdGZvcm0iOiIzIiwidXNlcl90eXBlIjoxLCJpYXQiOjE3ODQ0NDMyNzgsImV4cCI6MTc4NzAzNTI3OH0.Ub-QZZHhSpS5i-GZRW79f29JlIHMCng90j6Q3QtlzcU',
+        'content-type': 'application/json',
+        'origin': 'https://missionjeet.in',
+        'platform': '3',
+        'referer': 'https://missionjeet.in/',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'user_id': '3168072',
+        'version': '1'
+    },
+    
+    API: {
+        OVERVIEW: 'https://course.nexttoppers.com/course/course-details',
+        CONTENT: 'https://course.nexttoppers.com/course/all-content',
+        MEDIA: 'https://course.nexttoppers.com/course/content-details',
+        CONTENT_DETAILS: 'https://sp-api-seven.vercel.app/api/content-details'
+    }
+};
+
+// ==========================================
+// MISSIONJEET (NEXTTOPPERS) FUNCTIONS
+// ==========================================
+async function missionjeetRequest(endpoint, method = 'POST', payload = null) {
+    try {
+        const response = await axios({
+            method: method,
+            url: endpoint,
+            headers: MISSIONJEET_CONFIG.NT_HEADERS,
+            data: payload || {},
+            timeout: 30000
+        });
+        
+        return {
+            success: true,
+            data: response.data,
+            status: response.status
+        };
+    } catch (error) {
+        console.error('Missionjeet API Error:', error.message);
+        return {
+            success: false,
+            error: error.message,
+            status: error.response?.status || 500,
+            data: error.response?.data || null
+        };
+    }
+}
+
+async function getMissionjeetCourseOverview(courseId) {
+    const payload = { course_id: String(courseId), parent_id: "0" };
+    return await missionjeetRequest(MISSIONJEET_CONFIG.API.OVERVIEW, 'POST', payload);
+}
+
+async function getMissionjeetCourseContent(courseId, folderId = "0", limit = "1000", page = "1") {
+    const payload = {
+        course_id: String(courseId),
+        folder_id: String(folderId),
+        is_free: "",
+        keyword: "",
+        limit: String(limit),
+        page: String(page),
+        parent_course_id: "0"
+    };
+    return await missionjeetRequest(MISSIONJEET_CONFIG.API.CONTENT, 'POST', payload);
+}
+
+async function getMissionjeetMediaDetails(contentId, courseId) {
+    const payload = {
+        content_id: String(contentId),
+        course_id: String(courseId)
+    };
+    return await missionjeetRequest(MISSIONJEET_CONFIG.API.MEDIA, 'POST', payload);
+}
+
+async function getMissionjeetContentDetails(contentId, courseId) {
+    try {
+        const url = `${MISSIONJEET_CONFIG.API.CONTENT_DETAILS}?content_id=${contentId}&course_id=${courseId}`;
+        const response = await axios({
+            method: 'GET',
+            url: url,
+            headers: MISSIONJEET_CONFIG.NT_HEADERS,
+            timeout: 30000
+        });
+        
+        return {
+            success: true,
+            data: response.data,
+            status: response.status
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            status: error.response?.status || 500
+        };
+    }
+}
+
+async function scanMissionjeetForLiveContent(courseId, maxDepth = 5) {
+    const liveItems = [];
+    const scannedFolders = new Set();
+    
+    async function scanFolder(folderId, depth = 0) {
+        if (depth > maxDepth || scannedFolders.has(folderId)) return;
+        scannedFolders.add(folderId);
+        
+        const content = await getMissionjeetCourseContent(courseId, folderId);
+        if (!content.success || !content.data || !content.data.data) return;
+        
+        const items = Array.isArray(content.data.data) 
+            ? content.data.data 
+            : (Array.isArray(content.data.data.list) ? content.data.data.list : []);
+        
+        const subFolders = [];
+        
+        for (const item of items) {
+            const type = (item.type || "").toLowerCase();
+            const d = item.data || {};
+            const vType = parseInt(item.video_type || d.video_type || 0);
+            
+            if (vType === 3 || type === 'live' || 
+                parseInt(d.is_live) === 1 || parseInt(item.is_live) === 1) {
+                liveItems.push({ ...item, parent_folder_id: folderId });
+            }
+            
+            if (type === 'folder' || type === 'subject' || type === 'chapter') {
+                const id = d.id || item.entity_id || item.id;
+                if (id) subFolders.push(id);
+            }
+        }
+        
+        for (const subId of subFolders) {
+            await scanFolder(subId, depth + 1);
+        }
+    }
+    
+    await scanFolder("0");
+    return liveItems;
+}
+
+// ==========================================
+// MAIN ROUTES
+// ==========================================
+
+// Health check
 app.get("/", (req, res) => {
   res.json({
     status: "running",
-    message: "Vibrant Academy API Wrapper",
-    endpoints: {
-      video: "/vibrant/video/:courseId/:videoId/:cls"
+    message: "Multi-Platform API Wrapper",
+    platforms: {
+      vibrant: {
+        prefix: "/vibrant",
+        endpoints: {
+          video: "/vibrant/video/:courseId/:videoId/:cls"
+        }
+      },
+      missionjeet: {
+        prefix: "/missionjeet",
+        endpoints: {
+          overview: "/missionjeet/course/:courseId/overview",
+          content: "/missionjeet/course/:courseId/content",
+          media: "/missionjeet/media/:contentId",
+          contentDetails: "/missionjeet/content-details/:contentId",
+          live: "/missionjeet/course/:courseId/live",
+          discover: "/missionjeet/discover",
+          proxy: "/missionjeet/proxy"
+        }
+      }
     }
   });
 });
 
-// Vibrant API routes
+// ==========================================
+// VIBRANT ACADEMY ROUTES
+// ==========================================
 const vibrantRouter = express.Router();
 
-// Health check for vibrant routes
 vibrantRouter.get("/", (req, res) => {
   res.json({
     status: "running",
-    message: "Vibrant Academy API Wrapper",
+    platform: "vibrant",
     endpoints: {
       video: "/vibrant/video/:courseId/:videoId/:cls"
     }
   });
 });
 
-// Decrypted qualities endpoint
 vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
-
     const apiJson = await fetchVideoDetailsById(courseId, videoId, cls);
     const data = apiJson.data;
 
@@ -182,14 +360,12 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   }
 });
 
-// Mount the vibrant router
 app.use("/vibrant", vibrantRouter);
 
-// Keep the old route for backward compatibility
+// Keep backward compatibility
 app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
-
     const apiJson = await fetchVideoDetailsById(courseId, videoId, cls);
     const data = apiJson.data;
 
@@ -222,7 +398,198 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
+// ==========================================
+// MISSIONJEET (NEXTTOPPERS) ROUTES
+// ==========================================
+const missionjeetRouter = express.Router();
+
+// Health check for missionjeet
+missionjeetRouter.get("/", (req, res) => {
+  res.json({
+    status: "running",
+    platform: "missionjeet",
+    endpoints: {
+      overview: "/missionjeet/course/:courseId/overview",
+      content: "/missionjeet/course/:courseId/content",
+      media: "/missionjeet/media/:contentId",
+      contentDetails: "/missionjeet/content-details/:contentId",
+      live: "/missionjeet/course/:courseId/live",
+      discover: "/missionjeet/discover",
+      proxy: "/missionjeet/proxy"
+    }
+  });
 });
+
+// Get Course Overview
+missionjeetRouter.get('/course/:courseId/overview', async (req, res) => {
+    const { courseId } = req.params;
+    const result = await getMissionjeetCourseOverview(courseId);
+    res.status(result.success ? 200 : (result.status || 500)).json(result);
+});
+
+// Get Course Content
+missionjeetRouter.get('/course/:courseId/content', async (req, res) => {
+    const { courseId } = req.params;
+    const { folder_id = "0", limit = "1000", page = "1" } = req.query;
+    const result = await getMissionjeetCourseContent(courseId, folder_id, limit, page);
+    res.status(result.success ? 200 : (result.status || 500)).json(result);
+});
+
+// Get Media Details
+missionjeetRouter.get('/media/:contentId', async (req, res) => {
+    const { contentId } = req.params;
+    const { courseId } = req.query;
+    
+    if (!courseId) {
+        return res.status(400).json({
+            success: false,
+            error: 'courseId is required'
+        });
+    }
+    
+    const result = await getMissionjeetMediaDetails(contentId, courseId);
+    res.status(result.success ? 200 : (result.status || 500)).json(result);
+});
+
+// Get Content Details (PDF/Document Support)
+missionjeetRouter.get('/content-details/:contentId', async (req, res) => {
+    const { contentId } = req.params;
+    const { courseId } = req.query;
+    
+    if (!courseId) {
+        return res.status(400).json({
+            success: false,
+            error: 'courseId is required'
+        });
+    }
+    
+    const result = await getMissionjeetContentDetails(contentId, courseId);
+    res.status(result.success ? 200 : (result.status || 500)).json(result);
+});
+
+// Scan for Live Content
+missionjeetRouter.get('/course/:courseId/live', async (req, res) => {
+    const { courseId } = req.params;
+    const { maxDepth = 5 } = req.query;
+    
+    try {
+        const liveItems = await scanMissionjeetForLiveContent(courseId, parseInt(maxDepth));
+        res.json({
+            success: true,
+            data: liveItems,
+            count: liveItems.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Discover courses
+missionjeetRouter.get('/discover', async (req, res) => {
+    const COURSE_IDS = [];
+    for (let i = 185; i >= 184; i--) COURSE_IDS.push(i);
+    for (let i = 152; i >= 151; i--) COURSE_IDS.push(i);
+    for (let i = 161; i >= 160; i--) COURSE_IDS.push(i);
+    
+    const results = [];
+    
+    for (const id of COURSE_IDS) {
+        try {
+            const overview = await getMissionjeetCourseOverview(id);
+            if (overview.success && overview.data && overview.data.data) {
+                const details = overview.data.data.find(d => d.type === 'overview');
+                if (details && details.data) {
+                    const layout = details.data.find(l => l.layout_type === 'details');
+                    if (layout && layout.layout_data && layout.layout_data[0]) {
+                        const batchInfo = layout.layout_data[0];
+                        results.push({
+                            id: id,
+                            title: batchInfo.title,
+                            thumbnail: batchInfo.thumbnail,
+                            price: batchInfo.offer_price || 0,
+                            mrp: batchInfo.mrp || 0,
+                            description: batchInfo.description
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Failed to fetch course ${id}:`, error.message);
+        }
+    }
+    
+    res.json({
+        success: true,
+        data: results,
+        count: results.length
+    });
+});
+
+// Generic Proxy
+missionjeetRouter.post('/proxy', async (req, res) => {
+    const { target_url, method = 'POST', payload = null } = req.body;
+    
+    if (!target_url) {
+        return res.status(400).json({
+            success: false,
+            error: 'target_url is required'
+        });
+    }
+    
+    const result = await missionjeetRequest(target_url, method, payload);
+    res.status(result.success ? 200 : (result.status || 500)).json(result);
+});
+
+// Mount missionjeet router
+app.use("/missionjeet", missionjeetRouter);
+
+// ==========================================
+// ERROR HANDLING
+// ==========================================
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found',
+    path: req.originalUrl
+  });
+});
+
+app.use((err, req, res, next) => {
+  console.error('Server Error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: err.message
+  });
+});
+
+// ==========================================
+// START SERVER
+// ==========================================
+app.listen(PORT, () => {
+  console.log(`========================================`);
+  console.log(`🚀 Multi-Platform API Server is running`);
+  console.log(`📡 Port: ${PORT}`);
+  console.log(`🌐 URL: http://localhost:${PORT}`);
+  console.log(`========================================`);
+  console.log(`📚 Available Platforms:`);
+  console.log(`  🎓 Vibrant Academy: /vibrant/*`);
+  console.log(`  🎯 Missionjeet: /missionjeet/*`);
+  console.log(`========================================`);
+  console.log(`📍 Vibrant Endpoints:`);
+  console.log(`  GET  /vibrant/video/:courseId/:videoId/:cls`);
+  console.log(`📍 Missionjeet Endpoints:`);
+  console.log(`  GET  /missionjeet/course/:courseId/overview`);
+  console.log(`  GET  /missionjeet/course/:courseId/content`);
+  console.log(`  GET  /missionjeet/course/:courseId/live`);
+  console.log(`  GET  /missionjeet/media/:contentId?courseId=xxx`);
+  console.log(`  GET  /missionjeet/content-details/:contentId?courseId=xxx`);
+  console.log(`  GET  /missionjeet/discover`);
+  console.log(`  POST /missionjeet/proxy`);
+  console.log(`========================================`);
+});
+
+module.exports = app;
