@@ -83,6 +83,46 @@ function decryptPathWebLike(raw) {
   }
 }
 
+/**
+ * Decrypt all encrypted fields in a content item
+ * @param {Object} item - Content item from API
+ * @returns {Object} Content item with decrypted fields
+ */
+function decryptContentItem(item) {
+  if (!item) return item;
+  
+  const decrypted = { ...item };
+  
+  // Decrypt common encrypted fields
+  const fieldsToDecrypt = [
+    'path', 'file_url', 'video_url', 'thumbnail_url', 
+    'poster_url', 'pdf_url', 'test_url', 'content_url',
+    'stream_url', 'download_url', 'encrypted_url'
+  ];
+  
+  fieldsToDecrypt.forEach(field => {
+    if (decrypted[field]) {
+      const decryptedValue = decryptPathWebLike(decrypted[field]);
+      if (decryptedValue) {
+        // Store both original and decrypted
+        decrypted[`${field}_decrypted`] = decryptedValue;
+      }
+    }
+  });
+  
+  // Handle nested content items if they exist
+  if (decrypted.contents && Array.isArray(decrypted.contents)) {
+    decrypted.contents = decrypted.contents.map(decryptContentItem);
+  }
+  
+  // Handle children if they exist
+  if (decrypted.children && Array.isArray(decrypted.children)) {
+    decrypted.children = decrypted.children.map(decryptContentItem);
+  }
+  
+  return decrypted;
+}
+
 function buildQualitiesFromData(data) {
   const qualities = [];
 
@@ -127,9 +167,10 @@ async function fetchVideoDetailsById(courseId, videoId, cls) {
  * @param {string|number} courseId - The course/batch ID
  * @param {number} start - Pagination start index (default: 0)
  * @param {string} cls - Class (11 or 12)
+ * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
  * @returns {Promise<Array>} Array of content items
  */
-async function fetchRootContents(courseId, start = 0, cls) {
+async function fetchRootContents(courseId, start = 0, cls, decrypt = false) {
   if (!courseId) throw new Error("courseId is required");
   if (!cls) throw new Error("cls is required");
 
@@ -140,7 +181,8 @@ async function fetchRootContents(courseId, start = 0, cls) {
   const data = res.data;
 
   if (data.status === 200) {
-    return data.data || [];
+    const contents = data.data || [];
+    return decrypt ? contents.map(decryptContentItem) : contents;
   } else {
     throw new Error(data.message || "Failed to fetch root contents");
   }
@@ -152,9 +194,10 @@ async function fetchRootContents(courseId, start = 0, cls) {
  * @param {string|number} folderId - The folder ID
  * @param {number} start - Pagination start index (default: 0)
  * @param {string} cls - Class (11 or 12)
+ * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
  * @returns {Promise<Array>} Array of content items
  */
-async function fetchFolderContents(courseId, folderId, start = 0, cls) {
+async function fetchFolderContents(courseId, folderId, start = 0, cls, decrypt = false) {
   if (!courseId) throw new Error("courseId is required");
   if (!folderId) throw new Error("folderId is required");
   if (!cls) throw new Error("cls is required");
@@ -166,7 +209,8 @@ async function fetchFolderContents(courseId, folderId, start = 0, cls) {
   const data = res.data;
 
   if (data.status === 200) {
-    return data.data || [];
+    const contents = data.data || [];
+    return decrypt ? contents.map(decryptContentItem) : contents;
   } else {
     throw new Error(data.message || "Failed to fetch folder contents");
   }
@@ -177,17 +221,18 @@ async function fetchFolderContents(courseId, folderId, start = 0, cls) {
  * @param {string|number} courseId - The course/batch ID
  * @param {string|number} folderId - The folder ID (-1 for root)
  * @param {string} cls - Class (11 or 12)
+ * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
  * @returns {Promise<Array>} Array of all content items
  */
-async function fetchAllContentsRecursive(courseId, folderId = -1, cls) {
+async function fetchAllContentsRecursive(courseId, folderId = -1, cls, decrypt = false) {
   const allContents = [];
   let start = 0;
   let hasMore = true;
 
   while (hasMore) {
     const contents = folderId === -1 
-      ? await fetchRootContents(courseId, start, cls)
-      : await fetchFolderContents(courseId, folderId, start, cls);
+      ? await fetchRootContents(courseId, start, cls, decrypt)
+      : await fetchFolderContents(courseId, folderId, start, cls, decrypt);
     
     if (contents.length === 0) {
       hasMore = false;
@@ -215,7 +260,9 @@ app.get("/", (req, res) => {
       video: "/vibrant/video/:courseId/:videoId/:cls",
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
-      allContents: "/vibrant/contents/:courseId/:cls/all"
+      allContents: "/vibrant/contents/:courseId/:cls/all",
+      decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
+      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls"
     }
   });
 });
@@ -232,7 +279,9 @@ vibrantRouter.get("/", (req, res) => {
       video: "/vibrant/video/:courseId/:videoId/:cls",
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
-      allContents: "/vibrant/contents/:courseId/:cls/all"
+      allContents: "/vibrant/contents/:courseId/:cls/all",
+      decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
+      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls"
     }
   });
 });
@@ -274,13 +323,14 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   }
 });
 
-// Get root contents of a course
+// Get root contents of a course (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
   try {
     const { courseId, cls } = req.params;
     const start = parseInt(req.query.start) || 0;
+    const decrypt = req.query.decrypt === 'true';
 
-    const contents = await fetchRootContents(courseId, start, cls);
+    const contents = await fetchRootContents(courseId, start, cls, decrypt);
 
     res.json({
       success: true,
@@ -288,6 +338,7 @@ vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
       class: cls,
       start,
       count: contents.length,
+      decrypted: decrypt,
       contents,
     });
   } catch (err) {
@@ -300,18 +351,20 @@ vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
   }
 });
 
-// Get all contents of a course recursively
+// Get all contents of a course recursively (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:cls/all", async (req, res) => {
   try {
     const { courseId, cls } = req.params;
+    const decrypt = req.query.decrypt === 'true';
 
-    const contents = await fetchAllContentsRecursive(courseId, -1, cls);
+    const contents = await fetchAllContentsRecursive(courseId, -1, cls, decrypt);
 
     res.json({
       success: true,
       courseId,
       class: cls,
       count: contents.length,
+      decrypted: decrypt,
       contents,
     });
   } catch (err) {
@@ -324,20 +377,46 @@ vibrantRouter.get("/contents/:courseId/:cls/all", async (req, res) => {
   }
 });
 
-// Get folder contents
+// Get decrypted root contents (always decrypts)
+vibrantRouter.get("/contents/decrypt/:courseId/:cls", async (req, res) => {
+  try {
+    const { courseId, cls } = req.params;
+    const start = parseInt(req.query.start) || 0;
+
+    const contents = await fetchRootContents(courseId, start, cls, true);
+
+    res.json({
+      success: true,
+      courseId,
+      class: cls,
+      start,
+      count: contents.length,
+      decrypted: true,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/contents/decrypt:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch and decrypt root contents",
+      message: err.message,
+    });
+  }
+});
+
+// Get folder contents (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
   try {
     const { courseId, folderId, cls } = req.params;
     const start = parseInt(req.query.start) || 0;
-
-    // Check if recursive flag is set
     const recursive = req.query.recursive === 'true';
+    const decrypt = req.query.decrypt === 'true';
 
     let contents;
     if (recursive) {
-      contents = await fetchAllContentsRecursive(courseId, folderId, cls);
+      contents = await fetchAllContentsRecursive(courseId, folderId, cls, decrypt);
     } else {
-      contents = await fetchFolderContents(courseId, folderId, start, cls);
+      contents = await fetchFolderContents(courseId, folderId, start, cls, decrypt);
     }
 
     res.json({
@@ -347,6 +426,7 @@ vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
       class: cls,
       start: recursive ? 0 : start,
       recursive,
+      decrypted: decrypt,
       count: contents.length,
       contents,
     });
@@ -355,6 +435,41 @@ vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch folder contents",
+      message: err.message,
+    });
+  }
+});
+
+// Get decrypted folder contents (always decrypts)
+vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res) => {
+  try {
+    const { courseId, folderId, cls } = req.params;
+    const start = parseInt(req.query.start) || 0;
+    const recursive = req.query.recursive === 'true';
+
+    let contents;
+    if (recursive) {
+      contents = await fetchAllContentsRecursive(courseId, folderId, cls, true);
+    } else {
+      contents = await fetchFolderContents(courseId, folderId, start, cls, true);
+    }
+
+    res.json({
+      success: true,
+      courseId,
+      folderId,
+      class: cls,
+      start: recursive ? 0 : start,
+      recursive,
+      decrypted: true,
+      count: contents.length,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/contents/decrypt/:folderId:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch and decrypt folder contents",
       message: err.message,
     });
   }
@@ -403,9 +518,16 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant`);
-  console.log(`Example endpoints:`);
-  console.log(`  - Video: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
-  console.log(`  - Root Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:cls`);
-  console.log(`  - Folder Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:folderId/:cls`);
-  console.log(`  - All Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:cls/all`);
+  console.log(`\nExample endpoints:`);
+  console.log(`  Video with decrypted URLs:`);
+  console.log(`    /vibrant/video/:courseId/:videoId/:cls`);
+  console.log(`\n  Contents (raw/encrypted):`);
+  console.log(`    /vibrant/contents/:courseId/:cls`);
+  console.log(`    /vibrant/contents/:courseId/:cls?decrypt=true`);
+  console.log(`\n  Contents (auto-decrypted):`);
+  console.log(`    /vibrant/contents/decrypt/:courseId/:cls`);
+  console.log(`    /vibrant/contents/decrypt/:courseId/:folderId/:cls`);
+  console.log(`\n  Recursive all contents:`);
+  console.log(`    /vibrant/contents/:courseId/:cls/all?decrypt=true`);
+  console.log(`    /vibrant/contents/:courseId/:folderId/:cls?recursive=true&decrypt=true`);
 });
