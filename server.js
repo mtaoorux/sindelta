@@ -1,9 +1,62 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ===== CORS CONFIGURATION =====
+// Allow specific origins
+const allowedOrigins = [
+  'https://mtaiirus.pages.dev',
+  'https://www.mtaiirus.pages.dev',
+  'http://mtaiirus.pages.dev',
+  'mtaiirus.pages.dev',
+  // Add any other domains you want to allow
+  // 'https://yourdomain.com',
+  // 'http://localhost:3000', // For local development
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      // For development, you can log the blocked origin
+      console.log('Blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'auth-key', 
+    'client-service', 
+    'device-type', 
+    'user-Id',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Handle pre-flight requests
+app.options('*', cors(corsOptions));
+
+// ===== OR if you want to allow all origins (for simpler setup) =====
+// app.use(cors()); // This allows all origins
+
+// ===== REST OF YOUR CODE =====
 
 const VIBRANT_API = "https://vibrantacademykotaapi.akamai.net.in";
 
@@ -530,4 +583,5 @@ app.listen(PORT, () => {
   console.log(`\n  Recursive all contents:`);
   console.log(`    /vibrant/contents/:courseId/:cls/all?decrypt=true`);
   console.log(`    /vibrant/contents/:courseId/:folderId/:cls?recursive=true&decrypt=true`);
+  console.log(`\nCORS enabled for:`, allowedOrigins);
 });
