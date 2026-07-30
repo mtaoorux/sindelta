@@ -144,36 +144,104 @@ function decryptPathWebLike(raw) {
 function decryptContentItem(item) {
   if (!item) return item;
   
+  // If it's an array, process each item
+  if (Array.isArray(item)) {
+    return item.map(decryptContentItem);
+  }
+  
+  // If it's not an object, return as is
+  if (typeof item !== 'object') return item;
+  
   const decrypted = { ...item };
   
-  // Decrypt common encrypted fields
+  // Decrypt common encrypted fields - expanded list
   const fieldsToDecrypt = [
     'path', 'file_url', 'video_url', 'thumbnail_url', 
     'poster_url', 'pdf_url', 'test_url', 'content_url',
-    'stream_url', 'download_url', 'encrypted_url'
+    'stream_url', 'download_url', 'encrypted_url',
+    'url', 'link', 'file', 'video', 'image',
+    'thumbnail', 'poster', 'pdf', 'content'
   ];
   
-  fieldsToDecrypt.forEach(field => {
-    if (decrypted[field]) {
-      const decryptedValue = decryptPathWebLike(decrypted[field]);
+  // Decrypt fields that match patterns
+  Object.keys(decrypted).forEach(key => {
+    // Check if field name contains common URL/encrypted keywords
+    const shouldDecrypt = fieldsToDecrypt.some(field => 
+      key.toLowerCase().includes(field.toLowerCase())
+    );
+    
+    if (shouldDecrypt && typeof decrypted[key] === 'string') {
+      const decryptedValue = decryptPathWebLike(decrypted[key]);
       if (decryptedValue) {
-        // Store both original and decrypted
-        decrypted[`${field}_decrypted`] = decryptedValue;
+        // Store decrypted version with _decrypted suffix
+        decrypted[`${key}_decrypted`] = decryptedValue;
+        // Also replace the original if it's an encrypted path
+        if (!isPlainUrl(decrypted[key])) {
+          decrypted[key] = decryptedValue;
+        }
       }
     }
   });
   
-  // Handle nested content items if they exist
-  if (decrypted.contents && Array.isArray(decrypted.contents)) {
-    decrypted.contents = decrypted.contents.map(decryptContentItem);
-  }
-  
-  // Handle children if they exist
-  if (decrypted.children && Array.isArray(decrypted.children)) {
-    decrypted.children = decrypted.children.map(decryptContentItem);
-  }
+  // Recursively process nested objects and arrays
+  Object.keys(decrypted).forEach(key => {
+    if (decrypted[key] && typeof decrypted[key] === 'object') {
+      decrypted[key] = decryptContentItem(decrypted[key]);
+    }
+  });
   
   return decrypted;
+}
+
+/**
+ * Recursively process all items in an array or object
+ * @param {Array|Object} data - Data to process
+ * @param {boolean} deep - Whether to process nested items
+ * @returns {Array|Object} Processed data with decrypted fields
+ */
+function decryptAllData(data, deep = true) {
+  if (!data) return data;
+  
+  // Handle array
+  if (Array.isArray(data)) {
+    return data.map(item => {
+      if (deep && typeof item === 'object') {
+        return decryptAllData(item, deep);
+      }
+      return decryptContentItem(item);
+    });
+  }
+  
+  // Handle object
+  if (typeof data === 'object') {
+    const result = { ...data };
+    
+    // Check if this is a content item with data array
+    if (result.data && Array.isArray(result.data)) {
+      result.data = result.data.map(item => decryptContentItem(item));
+    }
+    
+    // Also check for contents array
+    if (result.contents && Array.isArray(result.contents)) {
+      result.contents = result.contents.map(item => decryptContentItem(item));
+    }
+    
+    // Decrypt the object itself
+    const decryptedItem = decryptContentItem(result);
+    
+    // Recursively process nested objects
+    if (deep) {
+      Object.keys(decryptedItem).forEach(key => {
+        if (decryptedItem[key] && typeof decryptedItem[key] === 'object') {
+          decryptedItem[key] = decryptAllData(decryptedItem[key], deep);
+        }
+      });
+    }
+    
+    return decryptedItem;
+  }
+  
+  return data;
 }
 
 function buildQualitiesFromData(data) {
@@ -235,7 +303,11 @@ async function fetchRootContents(courseId, start = 0, cls, decrypt = false) {
 
   if (data.status === 200) {
     const contents = data.data || [];
-    return decrypt ? contents.map(decryptContentItem) : contents;
+    if (decrypt) {
+      // Use deep decryption on all data
+      return decryptAllData(contents, true);
+    }
+    return contents;
   } else {
     throw new Error(data.message || "Failed to fetch root contents");
   }
@@ -263,7 +335,10 @@ async function fetchFolderContents(courseId, folderId, start = 0, cls, decrypt =
 
   if (data.status === 200) {
     const contents = data.data || [];
-    return decrypt ? contents.map(decryptContentItem) : contents;
+    if (decrypt) {
+      return decryptAllData(contents, true);
+    }
+    return contents;
   } else {
     throw new Error(data.message || "Failed to fetch folder contents");
   }
@@ -315,7 +390,9 @@ app.get("/", (req, res) => {
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
       decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
-      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls"
+      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls",
+      decryptAny: "/vibrant/decrypt (POST)",
+      decryptUrl: "/vibrant/decrypt/url (POST)"
     }
   });
 });
@@ -334,7 +411,9 @@ vibrantRouter.get("/", (req, res) => {
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
       decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
-      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls"
+      decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls",
+      decryptAny: "/vibrant/decrypt (POST)",
+      decryptUrl: "/vibrant/decrypt/url (POST)"
     }
   });
 });
@@ -355,6 +434,9 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
     }
 
     const qualities = buildQualitiesFromData(data);
+    
+    // Also decrypt all other fields in data
+    const decryptedData = decryptAllData(data, true);
 
     res.json({
       success: true,
@@ -365,6 +447,7 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
       encType: data.enc_type,
       iv_string: data.iv_string,
       qualities,
+      decryptedData, // Include fully decrypted data
     });
   } catch (err) {
     console.error("Error /vibrant/video:", err.message);
@@ -528,6 +611,65 @@ vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res)
   }
 });
 
+// ===== NEW DECRYPTION ENDPOINTS =====
+
+// Decrypt any data (POST)
+vibrantRouter.post("/decrypt", (req, res) => {
+  try {
+    const { data } = req.body;
+    
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing data to decrypt"
+      });
+    }
+    
+    const decrypted = decryptAllData(data, true);
+    
+    res.json({
+      success: true,
+      decrypted,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/decrypt:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to decrypt data",
+      message: err.message,
+    });
+  }
+});
+
+// Decrypt a single URL (POST)
+vibrantRouter.post("/decrypt/url", (req, res) => {
+  try {
+    const { url } = req.body;
+    
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing URL to decrypt"
+      });
+    }
+    
+    const decrypted = decryptPathWebLike(url);
+    
+    res.json({
+      success: true,
+      original: url,
+      decrypted: decrypted,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/decrypt/url:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to decrypt URL",
+      message: err.message,
+    });
+  }
+});
+
 // Mount the vibrant router
 app.use("/vibrant", vibrantRouter);
 
@@ -583,5 +725,8 @@ app.listen(PORT, () => {
   console.log(`\n  Recursive all contents:`);
   console.log(`    /vibrant/contents/:courseId/:cls/all?decrypt=true`);
   console.log(`    /vibrant/contents/:courseId/:folderId/:cls?recursive=true&decrypt=true`);
+  console.log(`\n  NEW Decryption endpoints:`);
+  console.log(`    POST /vibrant/decrypt - Decrypt any JSON data`);
+  console.log(`    POST /vibrant/decrypt/url - Decrypt a single URL`);
   console.log(`\nCORS enabled for:`, allowedOrigins);
 });
