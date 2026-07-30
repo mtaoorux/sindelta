@@ -120,13 +120,102 @@ async function fetchVideoDetailsById(courseId, videoId, cls) {
   return res.data;
 }
 
+// ===== BATCH CONTENT API FUNCTIONS =====
+
+/**
+ * Fetch root folder contents for a course
+ * @param {string|number} courseId - The course/batch ID
+ * @param {number} start - Pagination start index (default: 0)
+ * @param {string} cls - Class (11 or 12)
+ * @returns {Promise<Array>} Array of content items
+ */
+async function fetchRootContents(courseId, start = 0, cls) {
+  if (!courseId) throw new Error("courseId is required");
+  if (!cls) throw new Error("cls is required");
+
+  const url = `${VIBRANT_API}/get/folder_contentsv3?course_id=${encodeURIComponent(courseId)}&parent_id=-1&start=${start}`;
+  const headers = getOriginHeaders(cls);
+  
+  const res = await axios.get(url, { headers });
+  const data = res.data;
+
+  if (data.status === 200) {
+    return data.data || [];
+  } else {
+    throw new Error(data.message || "Failed to fetch root contents");
+  }
+}
+
+/**
+ * Fetch folder contents for a specific folder
+ * @param {string|number} courseId - The course/batch ID
+ * @param {string|number} folderId - The folder ID
+ * @param {number} start - Pagination start index (default: 0)
+ * @param {string} cls - Class (11 or 12)
+ * @returns {Promise<Array>} Array of content items
+ */
+async function fetchFolderContents(courseId, folderId, start = 0, cls) {
+  if (!courseId) throw new Error("courseId is required");
+  if (!folderId) throw new Error("folderId is required");
+  if (!cls) throw new Error("cls is required");
+
+  const url = `${VIBRANT_API}/get/folder_contentsv3?course_id=${encodeURIComponent(courseId)}&parent_id=${encodeURIComponent(folderId)}&start=${start}`;
+  const headers = getOriginHeaders(cls);
+  
+  const res = await axios.get(url, { headers });
+  const data = res.data;
+
+  if (data.status === 200) {
+    return data.data || [];
+  } else {
+    throw new Error(data.message || "Failed to fetch folder contents");
+  }
+}
+
+/**
+ * Recursively fetch all contents in a course/folder
+ * @param {string|number} courseId - The course/batch ID
+ * @param {string|number} folderId - The folder ID (-1 for root)
+ * @param {string} cls - Class (11 or 12)
+ * @returns {Promise<Array>} Array of all content items
+ */
+async function fetchAllContentsRecursive(courseId, folderId = -1, cls) {
+  const allContents = [];
+  let start = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const contents = folderId === -1 
+      ? await fetchRootContents(courseId, start, cls)
+      : await fetchFolderContents(courseId, folderId, start, cls);
+    
+    if (contents.length === 0) {
+      hasMore = false;
+    } else {
+      allContents.push(...contents);
+      start += contents.length;
+      // If less than expected page size, we've reached the end
+      if (contents.length < 20) { // Typical page size
+        hasMore = false;
+      }
+    }
+  }
+
+  return allContents;
+}
+
+// ===== ROUTES =====
+
 // Health check route
 app.get("/", (req, res) => {
   res.json({
     status: "running",
     message: "Vibrant Academy API Wrapper",
     endpoints: {
-      video: "/vibrant/video/:courseId/:videoId/:cls"
+      video: "/vibrant/video/:courseId/:videoId/:cls",
+      rootContents: "/vibrant/contents/:courseId/:cls",
+      folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
+      allContents: "/vibrant/contents/:courseId/:cls/all"
     }
   });
 });
@@ -140,7 +229,10 @@ vibrantRouter.get("/", (req, res) => {
     status: "running",
     message: "Vibrant Academy API Wrapper",
     endpoints: {
-      video: "/vibrant/video/:courseId/:videoId/:cls"
+      video: "/vibrant/video/:courseId/:videoId/:cls",
+      rootContents: "/vibrant/contents/:courseId/:cls",
+      folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
+      allContents: "/vibrant/contents/:courseId/:cls/all"
     }
   });
 });
@@ -177,6 +269,92 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch/decrypt",
+      message: err.message,
+    });
+  }
+});
+
+// Get root contents of a course
+vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
+  try {
+    const { courseId, cls } = req.params;
+    const start = parseInt(req.query.start) || 0;
+
+    const contents = await fetchRootContents(courseId, start, cls);
+
+    res.json({
+      success: true,
+      courseId,
+      class: cls,
+      start,
+      count: contents.length,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/contents:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch root contents",
+      message: err.message,
+    });
+  }
+});
+
+// Get all contents of a course recursively
+vibrantRouter.get("/contents/:courseId/:cls/all", async (req, res) => {
+  try {
+    const { courseId, cls } = req.params;
+
+    const contents = await fetchAllContentsRecursive(courseId, -1, cls);
+
+    res.json({
+      success: true,
+      courseId,
+      class: cls,
+      count: contents.length,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/contents/all:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch all contents",
+      message: err.message,
+    });
+  }
+});
+
+// Get folder contents
+vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
+  try {
+    const { courseId, folderId, cls } = req.params;
+    const start = parseInt(req.query.start) || 0;
+
+    // Check if recursive flag is set
+    const recursive = req.query.recursive === 'true';
+
+    let contents;
+    if (recursive) {
+      contents = await fetchAllContentsRecursive(courseId, folderId, cls);
+    } else {
+      contents = await fetchFolderContents(courseId, folderId, start, cls);
+    }
+
+    res.json({
+      success: true,
+      courseId,
+      folderId,
+      class: cls,
+      start: recursive ? 0 : start,
+      recursive,
+      count: contents.length,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/contents/:folderId:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch folder contents",
       message: err.message,
     });
   }
@@ -224,5 +402,10 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
+  console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant`);
+  console.log(`Example endpoints:`);
+  console.log(`  - Video: http://localhost:${PORT}/vibrant/video/:courseId/:videoId/:cls`);
+  console.log(`  - Root Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:cls`);
+  console.log(`  - Folder Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:folderId/:cls`);
+  console.log(`  - All Contents: http://localhost:${PORT}/vibrant/contents/:courseId/:cls/all`);
 });
