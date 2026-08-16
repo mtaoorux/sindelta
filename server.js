@@ -327,6 +327,10 @@ app.get("/", (req, res) => {
     message: "Vibrant Academy API Wrapper (CORS enabled - all origins allowed)",
     endpoints: {
       video: "/vibrant/video/:courseId/:videoId/:cls",
+      pdf: "/vibrant/pdf/:courseId/:pdfId/:cls",
+      pdfDownload: "/vibrant/pdf/download/:courseId/:pdfId/:cls",
+      pdfView: "/vibrant/pdf/view/:courseId/:pdfId/:cls",
+      pdfBatch: "/vibrant/pdf/batch (POST)",
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
@@ -462,6 +466,10 @@ vibrantRouter.get("/", (req, res) => {
     message: "Vibrant Academy API Wrapper",
     endpoints: {
       video: "/vibrant/video/:courseId/:videoId/:cls",
+      pdf: "/vibrant/pdf/:courseId/:pdfId/:cls",
+      pdfDownload: "/vibrant/pdf/download/:courseId/:pdfId/:cls",
+      pdfView: "/vibrant/pdf/view/:courseId/:pdfId/:cls",
+      pdfBatch: "/vibrant/pdf/batch (POST)",
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
@@ -513,6 +521,319 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
     });
   }
 });
+
+// ===== PDF ROUTES =====
+
+// Get PDF metadata and URLs
+vibrantRouter.get("/pdf/:courseId/:pdfId/:cls", async (req, res) => {
+  try {
+    const { courseId, pdfId, cls } = req.params;
+    const download = req.query.download === 'true';
+
+    // Fetch PDF details using the same API endpoint as video but with PDF ID
+    const apiJson = await fetchVideoDetailsById(courseId, pdfId, cls);
+    const data = apiJson.data;
+
+    if (!data) {
+      return res.status(500).json({
+        success: false,
+        error: "No data field in response",
+      });
+    }
+
+    // Decrypt PDF URL
+    const decryptedData = decryptAllData(data, true);
+    
+    // Extract PDF URL from decrypted data
+    let pdfUrl = null;
+    let pdfUrls = [];
+    
+    // Check various possible fields for PDF URL
+    const possibleFields = ['file_url', 'pdf_url', 'content_url', 'url', 'link', 'file', 'path'];
+    
+    for (const field of possibleFields) {
+      if (data[field]) {
+        const decrypted = decryptPathWebLike(data[field]);
+        if (decrypted && (decrypted.endsWith('.pdf') || decrypted.includes('.pdf'))) {
+          pdfUrl = decrypted;
+          break;
+        }
+      }
+    }
+    
+    // Also check download_links for PDFs
+    if (Array.isArray(data.download_links)) {
+      for (const link of data.download_links) {
+        const url = decryptPathWebLike(link.path);
+        if (url && (url.endsWith('.pdf') || url.includes('.pdf'))) {
+          pdfUrls.push({
+            quality: link.quality || 'default',
+            url: url,
+            raw: link.path,
+            type: 'pdf'
+          });
+        }
+      }
+    }
+    
+    // If no PDF found in download_links, check other fields
+    if (pdfUrls.length === 0 && pdfUrl) {
+      pdfUrls.push({
+        quality: 'default',
+        url: pdfUrl,
+        type: 'pdf'
+      });
+    }
+
+    res.json({
+      success: true,
+      courseId,
+      pdfId,
+      class: cls,
+      title: data.Title || data.name || 'PDF Document',
+      pdfUrl: download ? pdfUrl : null, // Only send direct URL if download=true
+      pdfUrls: pdfUrls,
+      decryptedData: decryptedData,
+      metadata: {
+        fileName: data.file_name || data.Title || 'document.pdf',
+        fileSize: data.file_size || data.size || null,
+        pages: data.pages || data.page_count || null,
+        encType: data.enc_type,
+        iv_string: data.iv_string,
+      }
+    });
+  } catch (err) {
+    console.error("Error /vibrant/pdf:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch/decrypt PDF",
+      message: err.message,
+    });
+  }
+});
+
+// PDF download route (direct download)
+vibrantRouter.get("/pdf/download/:courseId/:pdfId/:cls", async (req, res) => {
+  try {
+    const { courseId, pdfId, cls } = req.params;
+
+    // Fetch PDF details
+    const apiJson = await fetchVideoDetailsById(courseId, pdfId, cls);
+    const data = apiJson.data;
+
+    if (!data) {
+      return res.status(500).json({
+        success: false,
+        error: "No data field in response",
+      });
+    }
+
+    // Try to get PDF URL
+    let pdfUrl = null;
+    const possibleFields = ['file_url', 'pdf_url', 'content_url', 'url', 'link', 'file', 'path'];
+    
+    for (const field of possibleFields) {
+      if (data[field]) {
+        const decrypted = decryptPathWebLike(data[field]);
+        if (decrypted && (decrypted.endsWith('.pdf') || decrypted.includes('.pdf'))) {
+          pdfUrl = decrypted;
+          break;
+        }
+      }
+    }
+    
+    // Check download_links if not found
+    if (!pdfUrl && Array.isArray(data.download_links)) {
+      for (const link of data.download_links) {
+        const url = decryptPathWebLike(link.path);
+        if (url && (url.endsWith('.pdf') || url.includes('.pdf'))) {
+          pdfUrl = url;
+          break;
+        }
+      }
+    }
+
+    if (!pdfUrl) {
+      return res.status(404).json({
+        success: false,
+        error: "PDF not found for this item",
+      });
+    }
+
+    // Fetch and stream the PDF
+    const response = await axios({
+      method: 'GET',
+      url: pdfUrl,
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      timeout: 60000,
+    });
+
+    // Set appropriate headers
+    const fileName = data.file_name || data.Title || 'document.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    
+    // Stream the PDF to client
+    response.data.pipe(res);
+    
+  } catch (err) {
+    console.error("Error /vibrant/pdf/download:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to download PDF",
+      message: err.message,
+    });
+  }
+});
+
+// PDF view route (inline view)
+vibrantRouter.get("/pdf/view/:courseId/:pdfId/:cls", async (req, res) => {
+  try {
+    const { courseId, pdfId, cls } = req.params;
+
+    // Fetch PDF details
+    const apiJson = await fetchVideoDetailsById(courseId, pdfId, cls);
+    const data = apiJson.data;
+
+    if (!data) {
+      return res.status(500).json({
+        success: false,
+        error: "No data field in response",
+      });
+    }
+
+    // Try to get PDF URL
+    let pdfUrl = null;
+    const possibleFields = ['file_url', 'pdf_url', 'content_url', 'url', 'link', 'file', 'path'];
+    
+    for (const field of possibleFields) {
+      if (data[field]) {
+        const decrypted = decryptPathWebLike(data[field]);
+        if (decrypted && (decrypted.endsWith('.pdf') || decrypted.includes('.pdf'))) {
+          pdfUrl = decrypted;
+          break;
+        }
+      }
+    }
+    
+    // Check download_links if not found
+    if (!pdfUrl && Array.isArray(data.download_links)) {
+      for (const link of data.download_links) {
+        const url = decryptPathWebLike(link.path);
+        if (url && (url.endsWith('.pdf') || url.includes('.pdf'))) {
+          pdfUrl = url;
+          break;
+        }
+      }
+    }
+
+    if (!pdfUrl) {
+      return res.status(404).json({
+        success: false,
+        error: "PDF not found for this item",
+      });
+    }
+
+    // Fetch and stream the PDF for inline viewing
+    const response = await axios({
+      method: 'GET',
+      url: pdfUrl,
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      timeout: 60000,
+    });
+
+    // Set appropriate headers for inline viewing
+    const fileName = data.file_name || data.Title || 'document.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    
+    // Stream the PDF to client
+    response.data.pipe(res);
+    
+  } catch (err) {
+    console.error("Error /vibrant/pdf/view:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to view PDF",
+      message: err.message,
+    });
+  }
+});
+
+// Batch PDF route
+vibrantRouter.post("/pdf/batch", async (req, res) => {
+  try {
+    const { items, cls } = req.body;
+    
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({
+        success: false,
+        error: "Items array is required",
+      });
+    }
+
+    const results = [];
+    
+    for (const item of items) {
+      try {
+        const { courseId, pdfId, cls: itemCls } = item;
+        const apiJson = await fetchVideoDetailsById(courseId, pdfId, itemCls || cls);
+        const data = apiJson.data;
+
+        let pdfUrl = null;
+        const possibleFields = ['file_url', 'pdf_url', 'content_url', 'url', 'link', 'file', 'path'];
+        
+        for (const field of possibleFields) {
+          if (data[field]) {
+            const decrypted = decryptPathWebLike(data[field]);
+            if (decrypted && (decrypted.endsWith('.pdf') || decrypted.includes('.pdf'))) {
+              pdfUrl = decrypted;
+              break;
+            }
+          }
+        }
+
+        results.push({
+          courseId,
+          pdfId,
+          title: data.Title || data.name || 'PDF Document',
+          pdfUrl: pdfUrl,
+          found: !!pdfUrl,
+        });
+      } catch (err) {
+        results.push({
+          courseId: item.courseId,
+          pdfId: item.pdfId,
+          error: err.message,
+          found: false,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: items.length,
+      found: results.filter(r => r.found).length,
+      results,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/pdf/batch:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to process batch PDF request",
+      message: err.message,
+    });
+  }
+});
+
+// ===== CONTENTS ROUTES =====
 
 vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
   try {
@@ -691,6 +1012,8 @@ vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res)
   }
 });
 
+// ===== DECRYPT ROUTES =====
+
 vibrantRouter.post("/decrypt", (req, res) => {
   try {
     const { data } = req.body;
@@ -791,10 +1114,15 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant`);
   console.log(`\n=== CORS: ALL ORIGINS ALLOWED ===`);
+  console.log(`\n=== PDF ENDPOINTS ===`);
+  console.log(`  PDF Info:       /vibrant/pdf/:courseId/:pdfId/:cls`);
+  console.log(`  PDF Download:   /vibrant/pdf/download/:courseId/:pdfId/:cls`);
+  console.log(`  PDF View:       /vibrant/pdf/view/:courseId/:pdfId/:cls`);
+  console.log(`  PDF Batch:      /vibrant/pdf/batch (POST)`);
   console.log(`\n=== LIVE ENDPOINTS ===`);
   console.log(`  Live & Upcoming: /vibrant/live/:courseId/:cls`);
   console.log(`  Previous Live:   /vibrant/previous-live/:courseId/:cls`);
   console.log(`  Proxy:           /vibrant/proxy/:endpoint`);
-  console.log(`\nExample: http://localhost:${PORT}/vibrant/live/12345/12`);
+  console.log(`\nExample: http://localhost:${PORT}/vibrant/pdf/12345/67890/12`);
   console.log(`\nCORS: Enabled for all origins`);
 });
