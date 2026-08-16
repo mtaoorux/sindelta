@@ -6,58 +6,14 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== CORS CONFIGURATION =====
-// Allow specific origins
-const allowedOrigins = [
-  'https://mtaiirus.pages.dev',
-  'https://www.mtaiirus.pages.dev',
-  'http://mtaiirus.pages.dev',
-  'mtaiirus.pages.dev',
-  // Add any other domains you want to allow
-  // 'https://yourdomain.com',
-  // 'http://localhost:3000', // For local development
-];
+// ===== MIDDLEWARE =====
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      // For development, you can log the blocked origin
-      console.log('Blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'auth-key', 
-    'client-service', 
-    'device-type', 
-    'user-Id',
-    'Accept',
-    'Origin',
-    'X-Requested-With'
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200
-};
+// ===== CORS - ALLOW ALL ORIGINS =====
+app.use(cors()); // Allow all origins
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Handle pre-flight requests
-app.options('*', cors(corsOptions));
-
-// ===== OR if you want to allow all origins (for simpler setup) =====
-// app.use(cors()); // This allows all origins
-
-// ===== REST OF YOUR CODE =====
-
+// ===== CONSTANTS =====
 const VIBRANT_API = "https://vibrantacademykotaapi.akamai.net.in";
 
 const id12 = "10275";
@@ -75,7 +31,9 @@ function getCreds(cls) {
       ? { id: id12, auth: auth12 }
       : { id: id11, auth: auth11 };
   }
-  throw new Error("Invalid class (use 11 or 12)");
+  // Default to class 12 if invalid
+  console.warn(`Invalid class "${cls}", defaulting to 12`);
+  return { id: id12, auth: auth12 };
 }
 
 function getOriginHeaders(cls) {
@@ -95,6 +53,7 @@ function getOriginHeaders(cls) {
   };
 }
 
+// ===== DECRYPTION FUNCTIONS =====
 function isPlainUrl(s) {
   return typeof s === "string" && /^https?:\/\//.test(s);
 }
@@ -136,25 +95,15 @@ function decryptPathWebLike(raw) {
   }
 }
 
-/**
- * Decrypt all encrypted fields in a content item
- * @param {Object} item - Content item from API
- * @returns {Object} Content item with decrypted fields
- */
 function decryptContentItem(item) {
   if (!item) return item;
-  
-  // If it's an array, process each item
   if (Array.isArray(item)) {
     return item.map(decryptContentItem);
   }
-  
-  // If it's not an object, return as is
   if (typeof item !== 'object') return item;
   
   const decrypted = { ...item };
   
-  // Decrypt common encrypted fields - expanded list
   const fieldsToDecrypt = [
     'path', 'file_url', 'video_url', 'thumbnail_url', 
     'poster_url', 'pdf_url', 'test_url', 'content_url',
@@ -163,9 +112,7 @@ function decryptContentItem(item) {
     'thumbnail', 'poster', 'pdf', 'content'
   ];
   
-  // Decrypt fields that match patterns
   Object.keys(decrypted).forEach(key => {
-    // Check if field name contains common URL/encrypted keywords
     const shouldDecrypt = fieldsToDecrypt.some(field => 
       key.toLowerCase().includes(field.toLowerCase())
     );
@@ -173,9 +120,7 @@ function decryptContentItem(item) {
     if (shouldDecrypt && typeof decrypted[key] === 'string') {
       const decryptedValue = decryptPathWebLike(decrypted[key]);
       if (decryptedValue) {
-        // Store decrypted version with _decrypted suffix
         decrypted[`${key}_decrypted`] = decryptedValue;
-        // Also replace the original if it's an encrypted path
         if (!isPlainUrl(decrypted[key])) {
           decrypted[key] = decryptedValue;
         }
@@ -183,7 +128,6 @@ function decryptContentItem(item) {
     }
   });
   
-  // Recursively process nested objects and arrays
   Object.keys(decrypted).forEach(key => {
     if (decrypted[key] && typeof decrypted[key] === 'object') {
       decrypted[key] = decryptContentItem(decrypted[key]);
@@ -193,16 +137,9 @@ function decryptContentItem(item) {
   return decrypted;
 }
 
-/**
- * Recursively process all items in an array or object
- * @param {Array|Object} data - Data to process
- * @param {boolean} deep - Whether to process nested items
- * @returns {Array|Object} Processed data with decrypted fields
- */
 function decryptAllData(data, deep = true) {
   if (!data) return data;
   
-  // Handle array
   if (Array.isArray(data)) {
     return data.map(item => {
       if (deep && typeof item === 'object') {
@@ -212,24 +149,19 @@ function decryptAllData(data, deep = true) {
     });
   }
   
-  // Handle object
   if (typeof data === 'object') {
     const result = { ...data };
     
-    // Check if this is a content item with data array
     if (result.data && Array.isArray(result.data)) {
       result.data = result.data.map(item => decryptContentItem(item));
     }
     
-    // Also check for contents array
     if (result.contents && Array.isArray(result.contents)) {
       result.contents = result.contents.map(item => decryptContentItem(item));
     }
     
-    // Decrypt the object itself
     const decryptedItem = decryptContentItem(result);
     
-    // Recursively process nested objects
     if (deep) {
       Object.keys(decryptedItem).forEach(key => {
         if (decryptedItem[key] && typeof decryptedItem[key] === 'object') {
@@ -274,23 +206,14 @@ function buildQualitiesFromData(data) {
   return qualities;
 }
 
+// ===== API FETCH FUNCTIONS =====
 async function fetchVideoDetailsById(courseId, videoId, cls) {
   const apiUrl = `${VIBRANT_API}/get/fetchVideoDetailsById?course_id=${courseId}&video_id=${videoId}&ytflag=0&folder_wise_course=1&lc_app_api_url=`;
   const headers = getOriginHeaders(cls);
-  const res = await axios.get(apiUrl, { headers });
+  const res = await axios.get(apiUrl, { headers, timeout: 30000 });
   return res.data;
 }
 
-// ===== BATCH CONTENT API FUNCTIONS =====
-
-/**
- * Fetch root folder contents for a course
- * @param {string|number} courseId - The course/batch ID
- * @param {number} start - Pagination start index (default: 0)
- * @param {string} cls - Class (11 or 12)
- * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
- * @returns {Promise<Array>} Array of content items
- */
 async function fetchRootContents(courseId, start = 0, cls, decrypt = false) {
   if (!courseId) throw new Error("courseId is required");
   if (!cls) throw new Error("cls is required");
@@ -298,13 +221,12 @@ async function fetchRootContents(courseId, start = 0, cls, decrypt = false) {
   const url = `${VIBRANT_API}/get/folder_contentsv3?course_id=${encodeURIComponent(courseId)}&parent_id=-1&start=${start}`;
   const headers = getOriginHeaders(cls);
   
-  const res = await axios.get(url, { headers });
+  const res = await axios.get(url, { headers, timeout: 30000 });
   const data = res.data;
 
   if (data.status === 200) {
     const contents = data.data || [];
     if (decrypt) {
-      // Use deep decryption on all data
       return decryptAllData(contents, true);
     }
     return contents;
@@ -313,15 +235,6 @@ async function fetchRootContents(courseId, start = 0, cls, decrypt = false) {
   }
 }
 
-/**
- * Fetch folder contents for a specific folder
- * @param {string|number} courseId - The course/batch ID
- * @param {string|number} folderId - The folder ID
- * @param {number} start - Pagination start index (default: 0)
- * @param {string} cls - Class (11 or 12)
- * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
- * @returns {Promise<Array>} Array of content items
- */
 async function fetchFolderContents(courseId, folderId, start = 0, cls, decrypt = false) {
   if (!courseId) throw new Error("courseId is required");
   if (!folderId) throw new Error("folderId is required");
@@ -330,7 +243,7 @@ async function fetchFolderContents(courseId, folderId, start = 0, cls, decrypt =
   const url = `${VIBRANT_API}/get/folder_contentsv3?course_id=${encodeURIComponent(courseId)}&parent_id=${encodeURIComponent(folderId)}&start=${start}`;
   const headers = getOriginHeaders(cls);
   
-  const res = await axios.get(url, { headers });
+  const res = await axios.get(url, { headers, timeout: 30000 });
   const data = res.data;
 
   if (data.status === 200) {
@@ -344,51 +257,82 @@ async function fetchFolderContents(courseId, folderId, start = 0, cls, decrypt =
   }
 }
 
-/**
- * Recursively fetch all contents in a course/folder
- * @param {string|number} courseId - The course/batch ID
- * @param {string|number} folderId - The folder ID (-1 for root)
- * @param {string} cls - Class (11 or 12)
- * @param {boolean} decrypt - Whether to decrypt URLs (default: false)
- * @returns {Promise<Array>} Array of all content items
- */
-async function fetchAllContentsRecursive(courseId, folderId = -1, cls, decrypt = false) {
-  const allContents = [];
-  let start = 0;
-  let hasMore = true;
+// ===== LIVE CONTENT FUNCTIONS =====
 
-  while (hasMore) {
-    const contents = folderId === -1 
-      ? await fetchRootContents(courseId, start, cls, decrypt)
-      : await fetchFolderContents(courseId, folderId, start, cls, decrypt);
-    
-    if (contents.length === 0) {
-      hasMore = false;
-    } else {
-      allContents.push(...contents);
-      start += contents.length;
-      // If less than expected page size, we've reached the end
-      if (contents.length < 20) { // Typical page size
-        hasMore = false;
+async function fetchLiveContent(courseId, cls, decrypt = false) {
+  if (!courseId) throw new Error("courseId is required");
+  if (!cls) throw new Error("cls is required");
+
+  const url = `${VIBRANT_API}/get/course_contents_by_live_status?course_id=${encodeURIComponent(courseId)}&start=0`;
+  const headers = getOriginHeaders(cls);
+  
+  try {
+    const res = await axios.get(url, { headers, timeout: 30000 });
+    const data = res.data;
+
+    if (data.status === 200) {
+      const result = {
+        live: data.data?.live || [],
+        upcoming: data.data?.upcoming || []
+      };
+      
+      if (decrypt) {
+        return {
+          live: decryptAllData(result.live, true),
+          upcoming: decryptAllData(result.upcoming, true)
+        };
       }
+      return result;
+    } else {
+      throw new Error(data.message || "Failed to fetch live content");
     }
+  } catch (error) {
+    console.error("fetchLiveContent error:", error.message);
+    throw error;
   }
+}
 
-  return allContents;
+async function fetchPreviousLiveVideos(courseId, cls, start = 0, decrypt = false) {
+  if (!courseId) throw new Error("courseId is required");
+  if (!cls) throw new Error("cls is required");
+
+  const url = `${VIBRANT_API}/get/get_previous_live_videos?course_id=${encodeURIComponent(courseId)}&start=${start}&folder_wise_course=1`;
+  const headers = getOriginHeaders(cls);
+  
+  try {
+    const res = await axios.get(url, { headers, timeout: 30000 });
+    const data = res.data;
+
+    if (data.status === 200) {
+      const contents = data.data || [];
+      if (decrypt) {
+        return decryptAllData(contents, true);
+      }
+      return contents;
+    } else {
+      throw new Error(data.message || "Failed to fetch previous live videos");
+    }
+  } catch (error) {
+    console.error("fetchPreviousLiveVideos error:", error.message);
+    throw error;
+  }
 }
 
 // ===== ROUTES =====
 
-// Health check route
+// Health check
 app.get("/", (req, res) => {
   res.json({
     status: "running",
-    message: "Vibrant Academy API Wrapper",
+    message: "Vibrant Academy API Wrapper (CORS enabled - all origins allowed)",
     endpoints: {
       video: "/vibrant/video/:courseId/:videoId/:cls",
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
+      liveContent: "/vibrant/live/:courseId/:cls",
+      previousLive: "/vibrant/previous-live/:courseId/:cls",
+      proxy: "/vibrant/proxy/:endpoint",
       decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
       decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls",
       decryptAny: "/vibrant/decrypt (POST)",
@@ -397,10 +341,121 @@ app.get("/", (req, res) => {
   });
 });
 
-// Vibrant API routes
 const vibrantRouter = express.Router();
 
-// Health check for vibrant routes
+// ===== LIVE CONTENT ROUTES =====
+
+vibrantRouter.get("/live/:courseId/:cls", async (req, res) => {
+  try {
+    const { courseId, cls } = req.params;
+    const decrypt = req.query.decrypt === 'true';
+
+    const result = await fetchLiveContent(courseId, cls, decrypt);
+
+    res.json({
+      success: true,
+      courseId,
+      class: cls,
+      decrypted: decrypt,
+      live: result.live,
+      upcoming: result.upcoming,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/live:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch live content",
+      message: err.message,
+    });
+  }
+});
+
+vibrantRouter.get("/previous-live/:courseId/:cls", async (req, res) => {
+  try {
+    const { courseId, cls } = req.params;
+    const start = parseInt(req.query.start) || 0;
+    const decrypt = req.query.decrypt === 'true';
+
+    const contents = await fetchPreviousLiveVideos(courseId, cls, start, decrypt);
+
+    res.json({
+      success: true,
+      courseId,
+      class: cls,
+      start,
+      decrypted: decrypt,
+      count: contents.length,
+      contents,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/previous-live:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch previous live videos",
+      message: err.message,
+    });
+  }
+});
+
+// ===== PROXY ROUTE =====
+vibrantRouter.all("/proxy/:endpoint", async (req, res) => {
+  try {
+    const { endpoint } = req.params;
+    const cls = req.query.cls || req.body?.cls || '12';
+    const headers = getOriginHeaders(cls);
+    
+    let apiUrl = `${VIBRANT_API}/get/${endpoint}`;
+    
+    const queryParams = { ...req.query };
+    delete queryParams.cls;
+    
+    const queryString = new URLSearchParams(queryParams).toString();
+    if (queryString) {
+      apiUrl += `?${queryString}`;
+    }
+    
+    const config = {
+      headers,
+      timeout: 30000,
+    };
+    
+    let response;
+    if (req.method === 'POST' || req.method === 'PUT') {
+      response = await axios({
+        method: req.method,
+        url: apiUrl,
+        data: req.body,
+        ...config
+      });
+    } else {
+      response = await axios.get(apiUrl, config);
+    }
+    
+    const shouldDecrypt = req.query.decrypt === 'true' || req.body?.decrypt === true;
+    let responseData = response.data;
+    
+    if (shouldDecrypt && responseData) {
+      responseData = decryptAllData(responseData, true);
+    }
+    
+    res.json({
+      success: true,
+      endpoint,
+      decrypted: shouldDecrypt,
+      data: responseData,
+    });
+  } catch (err) {
+    console.error("Error /vibrant/proxy:", err.message);
+    res.status(500).json({
+      success: false,
+      error: "Proxy request failed",
+      message: err.message,
+    });
+  }
+});
+
+// ===== OTHER ROUTES =====
+
 vibrantRouter.get("/", (req, res) => {
   res.json({
     status: "running",
@@ -410,6 +465,9 @@ vibrantRouter.get("/", (req, res) => {
       rootContents: "/vibrant/contents/:courseId/:cls",
       folderContents: "/vibrant/contents/:courseId/:folderId/:cls",
       allContents: "/vibrant/contents/:courseId/:cls/all",
+      liveContent: "/vibrant/live/:courseId/:cls",
+      previousLive: "/vibrant/previous-live/:courseId/:cls",
+      proxy: "/vibrant/proxy/:endpoint",
       decryptContents: "/vibrant/contents/decrypt/:courseId/:cls",
       decryptFolderContents: "/vibrant/contents/decrypt/:courseId/:folderId/:cls",
       decryptAny: "/vibrant/decrypt (POST)",
@@ -418,7 +476,6 @@ vibrantRouter.get("/", (req, res) => {
   });
 });
 
-// Decrypted qualities endpoint
 vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
@@ -434,8 +491,6 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
     }
 
     const qualities = buildQualitiesFromData(data);
-    
-    // Also decrypt all other fields in data
     const decryptedData = decryptAllData(data, true);
 
     res.json({
@@ -447,7 +502,7 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
       encType: data.enc_type,
       iv_string: data.iv_string,
       qualities,
-      decryptedData, // Include fully decrypted data
+      decryptedData,
     });
   } catch (err) {
     console.error("Error /vibrant/video:", err.message);
@@ -459,7 +514,6 @@ vibrantRouter.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   }
 });
 
-// Get root contents of a course (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
   try {
     const { courseId, cls } = req.params;
@@ -487,21 +541,32 @@ vibrantRouter.get("/contents/:courseId/:cls", async (req, res) => {
   }
 });
 
-// Get all contents of a course recursively (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:cls/all", async (req, res) => {
   try {
     const { courseId, cls } = req.params;
     const decrypt = req.query.decrypt === 'true';
 
-    const contents = await fetchAllContentsRecursive(courseId, -1, cls, decrypt);
+    const rootContents = await fetchRootContents(courseId, 0, cls, decrypt);
+    let allContents = [...rootContents];
+    
+    for (const item of rootContents) {
+      if (item.material_type === 'FOLDER') {
+        try {
+          const folderContents = await fetchFolderContents(courseId, item.id, 0, cls, decrypt);
+          allContents = allContents.concat(folderContents);
+        } catch (e) {
+          console.warn(`Failed to fetch folder ${item.id}:`, e.message);
+        }
+      }
+    }
 
     res.json({
       success: true,
       courseId,
       class: cls,
-      count: contents.length,
+      count: allContents.length,
       decrypted: decrypt,
-      contents,
+      contents: allContents,
     });
   } catch (err) {
     console.error("Error /vibrant/contents/all:", err.message);
@@ -513,7 +578,6 @@ vibrantRouter.get("/contents/:courseId/:cls/all", async (req, res) => {
   }
 });
 
-// Get decrypted root contents (always decrypts)
 vibrantRouter.get("/contents/decrypt/:courseId/:cls", async (req, res) => {
   try {
     const { courseId, cls } = req.params;
@@ -540,7 +604,6 @@ vibrantRouter.get("/contents/decrypt/:courseId/:cls", async (req, res) => {
   }
 });
 
-// Get folder contents (with optional decryption)
 vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
   try {
     const { courseId, folderId, cls } = req.params;
@@ -550,7 +613,16 @@ vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
 
     let contents;
     if (recursive) {
-      contents = await fetchAllContentsRecursive(courseId, folderId, cls, decrypt);
+      const folderContents = await fetchFolderContents(courseId, folderId, start, cls, decrypt);
+      contents = folderContents;
+      for (const item of folderContents) {
+        if (item.material_type === 'FOLDER') {
+          try {
+            const subContents = await fetchFolderContents(courseId, item.id, 0, cls, decrypt);
+            contents = contents.concat(subContents);
+          } catch (e) {}
+        }
+      }
     } else {
       contents = await fetchFolderContents(courseId, folderId, start, cls, decrypt);
     }
@@ -576,7 +648,6 @@ vibrantRouter.get("/contents/:courseId/:folderId/:cls", async (req, res) => {
   }
 });
 
-// Get decrypted folder contents (always decrypts)
 vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res) => {
   try {
     const { courseId, folderId, cls } = req.params;
@@ -585,7 +656,16 @@ vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res)
 
     let contents;
     if (recursive) {
-      contents = await fetchAllContentsRecursive(courseId, folderId, cls, true);
+      const folderContents = await fetchFolderContents(courseId, folderId, start, cls, true);
+      contents = folderContents;
+      for (const item of folderContents) {
+        if (item.material_type === 'FOLDER') {
+          try {
+            const subContents = await fetchFolderContents(courseId, item.id, 0, cls, true);
+            contents = contents.concat(subContents);
+          } catch (e) {}
+        }
+      }
     } else {
       contents = await fetchFolderContents(courseId, folderId, start, cls, true);
     }
@@ -611,9 +691,6 @@ vibrantRouter.get("/contents/decrypt/:courseId/:folderId/:cls", async (req, res)
   }
 });
 
-// ===== NEW DECRYPTION ENDPOINTS =====
-
-// Decrypt any data (POST)
 vibrantRouter.post("/decrypt", (req, res) => {
   try {
     const { data } = req.body;
@@ -641,7 +718,6 @@ vibrantRouter.post("/decrypt", (req, res) => {
   }
 });
 
-// Decrypt a single URL (POST)
 vibrantRouter.post("/decrypt/url", (req, res) => {
   try {
     const { url } = req.body;
@@ -673,7 +749,7 @@ vibrantRouter.post("/decrypt/url", (req, res) => {
 // Mount the vibrant router
 app.use("/vibrant", vibrantRouter);
 
-// Keep the old route for backward compatibility
+// Legacy route for backward compatibility
 app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   try {
     const { courseId, videoId, cls } = req.params;
@@ -710,23 +786,15 @@ app.get("/video/:courseId/:videoId/:cls", async (req, res) => {
   }
 });
 
+// ===== START SERVER =====
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Vibrant API available at: http://localhost:${PORT}/vibrant`);
-  console.log(`\nExample endpoints:`);
-  console.log(`  Video with decrypted URLs:`);
-  console.log(`    /vibrant/video/:courseId/:videoId/:cls`);
-  console.log(`\n  Contents (raw/encrypted):`);
-  console.log(`    /vibrant/contents/:courseId/:cls`);
-  console.log(`    /vibrant/contents/:courseId/:cls?decrypt=true`);
-  console.log(`\n  Contents (auto-decrypted):`);
-  console.log(`    /vibrant/contents/decrypt/:courseId/:cls`);
-  console.log(`    /vibrant/contents/decrypt/:courseId/:folderId/:cls`);
-  console.log(`\n  Recursive all contents:`);
-  console.log(`    /vibrant/contents/:courseId/:cls/all?decrypt=true`);
-  console.log(`    /vibrant/contents/:courseId/:folderId/:cls?recursive=true&decrypt=true`);
-  console.log(`\n  NEW Decryption endpoints:`);
-  console.log(`    POST /vibrant/decrypt - Decrypt any JSON data`);
-  console.log(`    POST /vibrant/decrypt/url - Decrypt a single URL`);
-  console.log(`\nCORS enabled for:`, allowedOrigins);
+  console.log(`\n=== CORS: ALL ORIGINS ALLOWED ===`);
+  console.log(`\n=== LIVE ENDPOINTS ===`);
+  console.log(`  Live & Upcoming: /vibrant/live/:courseId/:cls`);
+  console.log(`  Previous Live:   /vibrant/previous-live/:courseId/:cls`);
+  console.log(`  Proxy:           /vibrant/proxy/:endpoint`);
+  console.log(`\nExample: http://localhost:${PORT}/vibrant/live/12345/12`);
+  console.log(`\nCORS: Enabled for all origins`);
 });
