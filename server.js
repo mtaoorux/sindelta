@@ -4,84 +4,108 @@ const id13 = "10275";
 const auth10 = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjY4NjQxIiwidGltZXN0YW1wIjoxNzg0Mjc1NTQ0LCJpdl92ZXIiOjMsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJalk0TmpReElpd2laVzFoYVd3aU9pSTVOalV4TlRVNU1UWTBRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpMZFhOb1lXZHlZU0JRWVd3aUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKMmFXSnlZVzUwWVdOaFpHVnRlV3R2ZEdGZlpHSWlMQ0owWlc1aGJuUkpaQ0k2SWlJc0ltUnBjM0J2YzJGaWJHVWlPbVpoYkhObGZRLkhnVURtTFBueWhxaVVaNF9qVVgzTHVUX1FLVUI1TzR1WGNGVWV6YTBBY3MifQ.65NI2ur5DLJqcNVqff13fzCjWeaMlb16vfkNYYWvCi8";
 const id10 = "68641";
 
+// -------- CORS allow-list --------
+const ALLOWED_ORIGINS = [
+  "https://study python.xyz".replace(" ", ""), // studypython.xyz (https)
+  "https://www.studypython.xyz",
+  "https://studypython.vercel.app",
+  "https://studypython.netlify.app",
+  "https://studypython.pages.dev",
+];
+
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+  }
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Accept, User-Id, Auth-Key, Client-Service, Device-Type, Origin, Referer"
+  );
+  res.header("Access-Control-Allow-Credentials", "true");
+}
+
+// Handle preflight requests
+app.options("/vib/*", (req, res) => {
+  setCorsHeaders(req, res);
+  res.sendStatus(204);
+});
+
+// -------- Credentials --------
 function getCreds(cls) {
-  if (cls === "12"  cls === 12) {
-    return { id: id13, auth: auth13 };
-  }
-  if (cls === "11"  cls === 11) {
-    return { id: id10, auth: auth10 };
-  }
-  // Default to class 11
-  return { id: id10, auth: auth10 };
+  if (cls === "12" || cls === 12) {
+    return { id: id13, auth: auth13 };
+  }
+  if (cls === "11" || cls === 11) {
+    return { id: id10, auth: auth10 };
+  }
+  // Default to class 11
+  return { id: id10, auth: auth10 };
 }
 
 function getOriginHeaders(cls) {
-  const { id, auth } = getCreds(cls);
+  const { id, auth } = getCreds(cls);
 
-  return {
-    accept: "*/*",
-    "accept-encoding": "gzip, deflate, br, zstd",
-    "accept-language": "en-US,en;q=0.9",
-    "auth-key": "appxapi",
-    "client-service": "Appx",
-    "device-type": "",
-    "user-Id": id,
-    authorization: auth,
-    origin: "https://www.vibrantacademy.com",
-    referer: "https://www.vibrantacademy.com/",
-    "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
-  };
+  return {
+    accept: "*/*",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "en-US,en;q=0.9",
+    "auth-key": "appxapi",
+    "client-service": "Appx",
+    "device-type": "",
+    "user-Id": id,
+    authorization: auth,
+    origin: "https://www.vibrantacademy.com",
+    referer: "https://www.vibrantacademy.com/",
+    "user-agent":
+      "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+  };
 }
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-// 1. Proxy for /vib/* routes - FIXED
-app.get('/vib/*', async (req, res) => {
-  try {
-    // Remove the "/vib" prefix from path
-    const pathWithoutPrefix = req.path.replace(/^\/vib/, '');
-    
-    // Build full endpoint path + query string
-    const endpointPath = pathWithoutPrefix + (req.originalUrl.includes('?') 
-      ? req.originalUrl.slice(req.originalUrl.indexOf('?')) 
-      : '');
-    
-    // Construct target URL
-    const targetUrl =
-https://vibrantacademykotaapi.akamai.net.in${endpointPath}
-;
-    
-    console.log('📡 Proxying to:', targetUrl);
-    
-    // Fetch from target API with proper headers
-    const response = await axios.get(targetUrl, {
-      headers: getOriginHeaders(11), // Default class 11
-      timeout: 15000,
-      maxRedirects: 5,
-    });
-    
-    // Set CORS headers
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, User-Id, Auth-Key, Client-Service, Device-Type, Origin, Referer');
-    
-    res.json(response.data);
-  } catch (error) {
-    console.error('❌ Proxy error:', error.message);
-    console.error('❌ Error response:', error.response?.data);
-    
-    // Set CORS headers
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, User-Id, Auth-Key, Client-Service, Device-Type, Origin, Referer');
-    
-    res.status(error.response?.status  500).json({
-      error: error.message,
-      status: error.response?.status,
-      data: error.response?.data  null
-    });
-  }
+// 1. Proxy for /vib/* routes
+app.get("/vib/*", async (req, res) => {
+  // Always set CORS headers first
+  setCorsHeaders(req, res);
+
+  try {
+    // Remove the "/vib" prefix from path
+    const pathWithoutPrefix = req.path.replace(/^\/vib/, "");
+
+    // Build full endpoint path + query string
+    const endpointPath =
+      pathWithoutPrefix +
+      (req.originalUrl.includes("?")
+        ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
+        : "");
+
+    // Construct target URL
+    const targetUrl = `https://vibrantacademykotaapi.akamai.net.in${endpointPath}`;
+
+    console.log("📡 Proxying to:", targetUrl);
+
+    // Fetch from target API with proper headers
+    const response = await axios.get(targetUrl, {
+      headers: getOriginHeaders(11), // Default class 11
+      timeout: 15000,
+      maxRedirects: 5,
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("❌ Proxy error:", error.message);
+    console.error("❌ Error response:", error.response?.data);
+
+    res.status(error.response?.status || 500).json({
+      error: error.message,
+      status: error.response?.status,
+      data: error.response?.data || null,
+    });
+  }
 });
