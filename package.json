@@ -1,28 +1,17 @@
 {
-  "name": "multi-platform-api-server",
+  "name": "vibrant-proxy",
   "version": "1.0.0",
-  "description": "Multi-Platform API Server - Vibrant Academy & Missionjeet (Nexttoppers) Integration",
+  "description": "Proxy server for Vibrant Academy API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "axios": "^1.6.0",
-    "dotenv": "^16.3.1"
+    "axios": "^1.7.0",
+    "express": "^4.19.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
-  },
-  "keywords": [
-    "vibrant-academy",
-    "missionjeet",
-    "nexttoppers",
-    "api-wrapper",
-    "education"
-  ],
-  "author": "",
-  "license": "ISC"
+    "nodemon": "^3.1.0"
+  }
 }
