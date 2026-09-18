@@ -5,13 +5,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
-// Credentials
+// Credentials (prefer env vars; fall back to hardcoded values)
 // ============================================================
-const auth13 = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjEwMjc1IiwidGltZXN0YW1wIjoxNzg0MjgxMTI1LCJpdl92ZXIiOjQ5LCJzZXNzaW9uIjoiZXlKMGVYQWlPaUpLVjFRaUxDSmhiR2NpT2lKSVV6STFOaUo5LmV5SnBaQ0k2SWpFd01qYzFJaXdpWlcxaGFXd2lPaUp6WVdoMUxuTjFjbmxoYm5Ob0xtTnpaVUJuYldGcGJDNWpiMjBpTENKdVlXMWxJam9pVTNWeWRTSXNJblJsYm1GdWRGUjVjR1VpT2lKMWMyVnlJaXdpZEdWdVlXNTBUbUZ0WlNJNkluWnBZbkpoYm5SaFkyRmtaVzE1YTI5MFlWOWtZaUlzSW5SbGJtRnVkRWxrSWpvaUlpd2laR2x6Y0c5ellXSnNaU0k2Wm1Gc2MyVjkuNEt3VDUxbUptSE05aFRaWE5sOXU4NTF2SWJqdlBxaE1abjVYamZQTDE5SSJ9.fDRsvfD_cHiDjU4t23NVEcF_BJKlXXZETwHwXJO7PN8";
-const id13 = "10275";
+const auth13 =
+  process.env.AUTH_13 ||
+  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjEwMjc1IiwidGltZXN0YW1wIjoxNzg0MjgxMTI1LCJpdl92ZXIiOjQ5LCJzZXNzaW9uIjoiZXlKMGVYQWlPaUpLVjFRaUxDSmhiR2NpT2lKSVV6STFOaUo5LmV5SnBaQ0k2SWpFd01qYzFJaXdpWlcxaGFXd2lPaUp6WVdoMUxuTjFjbmxoYm5Ob0xtTnpaVUJuYldGcGJDNWpiMjBpTENKdVlXMWxJam9pVTNWeWRTSXNJblJsYm1GdWRGUjVjR1VpT2lKMWMyVnlJaXdpZEdWdVlXNTBUbUZ0WlNJNkluWnBZbkpoYm5SaFkyRmtaVzE1YTI5MFlWOWtZaUlzSW5SbGJtRnVkRWxrSWpvaUlpd2laR2x6Y0c5ellXSnNaU0k2Wm1Gc2MyVjkuNEt3VDUxbUptSE05aFRaWE5sOXU4NTF2SWJqdlBxaE1abjVYamZQTDE5SSJ9.fDRsvfD_cHiDjU4t23NVEcF_BJKlXXZETwHwXJO7PN8";
+const id13 = process.env.ID_13 || "10275";
 
-const auth10 = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjY4NjQxIiwidGltZXN0YW1wIjoxNzg0Mjc1NTQ0LCJpdl92ZXIiOjMsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJalk0TmpReElpd2laVzFoYVd3aU9pSTVOalV4TlRVNU1UWTBRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpMZFhOb1lXZHlZU0JRWVd3aUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKMmFXSnlZVzUwWVdOaFpHVnRlV3R2ZEdGZlpHSWlMQ0owWlc1aGJuUkpaQ0k2SWlJc0ltUnBjM0J2YzJGaWJHVWlPbVpoYkhObGZRLkhnVURtTFBueWhxaVVaNF9qVVgzTHVUX1FLVUI1TzR1WGNGVWV6YTBBY3MifQ.65NI2ur5DLJqcNVqff13fzCjWeaMlb16vfkNYYWvCi8";
-const id10 = "68641";
+const auth10 =
+  process.env.AUTH_10 ||
+  "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjY4NjQxIiwidGltZXN0YW1wIjoxNzg0Mjc1NTQ0LCJpdl92ZXIiOjMsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJalk0TmpReElpd2laVzFoYVd3aU9pSTVOalV4TlRVNU1UWTBRR2R0WVdsc0xtTnZiU0lzSW01aGJXVWlPaUpMZFhOb1lXZHlZU0JRWVd3aUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKMmFXSnlZVzUwWVdOaFpHVnRlV3R2ZEdGZlpHSWlMQ0owWlc1aGJuUkpaQ0k2SWlJc0ltUnBjM0J2YzJGaWJHVWlPbVpoYkhObGZRLkhnVURtTFBueWhxaVVaNF9qVVgzTHVUX1FLVUI1TzR1WGNGVWV6YTBBY3MifQ.65NI2ur5DLJqcNVqff13fzCjWeaMlb16vfkNYYWvCi8";
+const id10 = process.env.ID_10 || "68641";
 
 // ============================================================
 // Helpers
@@ -54,6 +58,24 @@ const corsHeaders = {
     "Content-Type, Authorization, Accept, User-Id, Auth-Key, Client-Service, Device-Type, Origin, Referer",
 };
 
+// Allow-listed upstream paths for the generic /vib/* proxy.
+// Add more paths here as needed.
+const ALLOWED_VIB_PATHS = [
+  "/get/folder_contentsv3",
+  "/get/fetchVideoDetailsById",
+  "/get/fetchContents",
+  "/get/course_list",
+  "/get/video_list",
+];
+
+function isAllowedVibPath(pathWithoutPrefix) {
+  return ALLOWED_VIB_PATHS.some(
+    (allowed) =>
+      pathWithoutPrefix === allowed ||
+      pathWithoutPrefix.startsWith(allowed + "/")
+  );
+}
+
 // ============================================================
 // Middleware
 // ============================================================
@@ -82,7 +104,6 @@ app.get("/folder_contents", async (req, res) => {
   try {
     const { course_id, folder_id, class: cls } = req.query;
 
-    // Validate required params
     if (!course_id || !folder_id) {
       res.set(corsHeaders);
       return res.status(400).json({
@@ -90,7 +111,6 @@ app.get("/folder_contents", async (req, res) => {
       });
     }
 
-    // Build target URL
     const targetUrl =
       `https://vibrantacademykotaapi.akamai.net.in/get/folder_contentsv3` +
       `?course_id=${encodeURIComponent(course_id)}` +
@@ -122,12 +142,76 @@ app.get("/folder_contents", async (req, res) => {
 });
 
 // ------------------------------------------------------------
-// 2. Generic Proxy for /vib/* routes
-//    GET /vib/<any-path>?<query>
+// 2. Video Details Endpoint
+//    GET /video_details?course_id=...&video_id=...&class=11
+//    (optional: ytflag, folder_wise_course, lc_app_api_url)
+// ------------------------------------------------------------
+app.get("/video_details", async (req, res) => {
+  try {
+    const {
+      course_id,
+      video_id,
+      class: cls,
+      ytflag = "0",
+      folder_wise_course = "1",
+      lc_app_api_url = "",
+    } = req.query;
+
+    if (!course_id || !video_id) {
+      res.set(corsHeaders);
+      return res.status(400).json({
+        error: "Missing required query params: course_id and video_id",
+      });
+    }
+
+    const targetUrl =
+      `https://vibrantacademykotaapi.akamai.net.in/get/fetchVideoDetailsById` +
+      `?course_id=${encodeURIComponent(course_id)}` +
+      `&video_id=${encodeURIComponent(video_id)}` +
+      `&ytflag=${encodeURIComponent(ytflag)}` +
+      `&folder_wise_course=${encodeURIComponent(folder_wise_course)}` +
+      `&lc_app_api_url=${encodeURIComponent(lc_app_api_url)}`;
+
+    console.log("📡 Proxying to:", targetUrl);
+
+    const response = await axios.get(targetUrl, {
+      headers: getOriginHeaders(cls || 11),
+      timeout: 15000,
+      maxRedirects: 5,
+    });
+
+    res.set(corsHeaders);
+    res.json(response.data);
+  } catch (error) {
+    console.error("❌ Video details error:", error.message);
+    console.error("❌ Error response:", error.response?.data);
+
+    res.set(corsHeaders);
+    res.status(error.response?.status ?? 500).json({
+      error: error.message,
+      status: error.response?.status,
+      data: error.response?.data ?? null,
+    });
+  }
+});
+
+// ------------------------------------------------------------
+// 3. Generic Proxy for /vib/* routes (allow-listed paths only)
+//    GET /vib/<allowed-path>?<query>
 // ------------------------------------------------------------
 app.get("/vib/*", async (req, res) => {
   try {
     const pathWithoutPrefix = req.path.replace(/^\/vib/, "");
+
+    // Enforce allow-list
+    if (!isAllowedVibPath(pathWithoutPrefix)) {
+      res.set(corsHeaders);
+      return res.status(403).json({
+        error: "Path not allowed",
+        path: pathWithoutPrefix,
+        allowed: ALLOWED_VIB_PATHS,
+      });
+    }
 
     const endpointPath =
       pathWithoutPrefix +
@@ -161,7 +245,7 @@ app.get("/vib/*", async (req, res) => {
 });
 
 // ------------------------------------------------------------
-// 3. 404 Handler
+// 4. 404 Handler
 // ------------------------------------------------------------
 app.use((req, res) => {
   res.set(corsHeaders);
@@ -169,7 +253,7 @@ app.use((req, res) => {
 });
 
 // ------------------------------------------------------------
-// 4. Global Error Handler
+// 5. Global Error Handler
 // ------------------------------------------------------------
 app.use((err, req, res, next) => {
   console.error("❌ Unhandled error:", err);
@@ -184,7 +268,8 @@ app.listen(PORT, () => {
   console.log(`🚀 Proxy server running on http://localhost:${PORT}`);
   console.log(`   Health check:      http://localhost:${PORT}/health`);
   console.log(`   Folder contents:   http://localhost:${PORT}/folder_contents?course_id=...&folder_id=...&class=11`);
-  console.log(`   Generic proxy:     http://localhost:${PORT}/vib/*`);
+  console.log(`   Video details:     http://localhost:${PORT}/video_details?course_id=...&video_id=...&class=11`);
+  console.log(`   Generic proxy:     http://localhost:${PORT}/vib/* (allow-listed paths only)`);
 });
 
 module.exports = app;
