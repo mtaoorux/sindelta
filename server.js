@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,12 @@ const auth10 =
 const id10 = process.env.ID_10 || "68641";
 
 // ============================================================
+// AES Constants (same as the support file)
+// ============================================================
+const AES_KEY_TEXT = process.env.AES_KEY_TEXT || "638udh3829162018";
+const AES_IV_TEXT = process.env.AES_IV_TEXT || "fedcba9876543210";
+
+// ============================================================
 // Helpers
 // ============================================================
 function getCreds(cls) {
@@ -27,7 +34,6 @@ function getCreds(cls) {
   if (cls === "11" || cls === 11) {
     return { id: id10, auth: auth10 };
   }
-  // Default to class 11
   return { id: id10, auth: auth10 };
 }
 
@@ -50,6 +56,150 @@ function getOriginHeaders(cls) {
   };
 }
 
+// ============================================================
+// DECRYPTION (ported from the support file)
+// ============================================================
+/**
+ * Decrypts a Vibrant-encrypted string.
+ * Input format: "<base64-ciphertext>[:...anything else ignored]"
+ *
+ * Equivalent to the browser-side `decryptVibrantLink()`:
+ *   - split on ":" and take the first part
+ *   - base64-decode
+ *   - AES-128-CBC decrypt with key/iv
+ *   - strip PKCS#7 padding
+ */
+function decryptVibrantLink(encryptedText) {
+  if (typeof encryptedText !== "string" || !encryptedText.length) {
+    throw new Error("decryptVibrantLink: input must be a non-empty string");
+  }
+
+  // 1) Take the part before the first colon (matches browser code)
+  const firstPart = encryptedText.split(":")[0];
+
+  // 2) Base64 decode
+  let encryptedBytes;
+  try {
+    encryptedBytes = Buffer.from(firstPart, "base64");
+  } catch (err) {
+    throw new Error("decryptVibrantLink: invalid base64 input");
+  }
+
+  if (!encryptedBytes.length || encryptedBytes.length % 16 !== 0) {
+    throw new Error("decryptVibrantLink: ciphertext length must be a multiple of 16");
+  }
+
+  // 3) AES-128-CBC decrypt
+  const key = Buffer.from(AES_KEY_TEXT, "utf8");
+  const iv = Buffer.from(AES_IV_TEXT, "utf8");
+
+  if (key.length !== 16) {
+    throw new Error("decryptVibrantLink: AES key must be 16 bytes (128-bit)");
+  }
+  if (iv.length !== 16) {
+    throw new Error("decryptVibrantLink: AES IV must be 16 bytes");
+  }
+
+  const decipher = crypto.createDecipheriv("aes-128-cbc", key, iv);
+  decipher.setAutoPadding(true); // Node handles PKCS#7 automatically
+
+  let decrypted;
+  try {
+    decrypted = Buffer.concat([
+      decipher.update(encryptedBytes),
+      decipher.final(),
+    ]);
+  } catch (err) {
+    // Fall back to manual padding strip (matches browser fallback behavior)
+    try {
+      const decipher2 = crypto.createDecipheriv("aes-128-cbc", key, iv);
+      decipher2.setAutoPadding(false);
+      let raw = Buffer.concat([
+        decipher2.update(encryptedBytes),
+        decipher2.final(),
+      ]);
+      // Manual PKCS#7 strip
+      if (raw.length > 0) {
+        const pad = raw[raw.length - 1];
+        if (pad > 0 && pad <= 16 && pad <= raw.length) {
+          const tail = raw.slice(-pad);
+          const valid = tail.every((b) => b === pad);
+          if (valid) raw = raw.slice(0, raw.length - pad);
+        }
+      }
+      decrypted = raw;
+    } catch (err2) {
+      throw new Error("decryptVibrantLink: decryption failed");
+    }
+  }
+
+  return decrypted.toString("utf8");
+}
+
+/**
+ * Recursively walk an object and decrypt any field whose value looks like
+ * an encrypted Vibrant link. Fields explicitly listed in DECRYPT_FIELDS
+ * are always attempted; other fields are attempted only when
+ * `aggressive` is true.
+ */
+const DECRYPT_FIELDS = new Set([
+  "file_link",
+  "pdf_link",
+  "video_link",
+  "url",
+  "link",
+  "encrypted_url",
+  "video_url",
+  "download_link",
+  "attachment",
+  "file",
+]);
+
+function looksEncrypted(value) {
+  if (typeof value !== "string") return false;
+  if (value.length < 24) return false;
+  // base64-ish (allow "=" padding, "+", "/", "-", "_")
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(value.split(":")[0])) return false;
+  // must decode to multiple of 16 bytes
+  try {
+    const buf = Buffer.from(value.split(":")[0], "base64");
+    return buf.length > 0 && buf.length % 16 === 0;
+  } catch {
+    return false;
+  }
+}
+
+function decryptFields(node, aggressive = false) {
+  if (node === null || node === undefined) return node;
+
+  if (Array.isArray(node)) {
+    return node.map((item) => decryptFields(item, aggressive));
+  }
+
+  if (typeof node === "object") {
+    const out = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (typeof value === "string") {
+        const shouldTry = aggressive || DECRYPT_FIELDS.has(key) || looksEncrypted(value);
+        if (shouldTry) {
+          try {
+            out[key] = decryptVibrantLink(value);
+          } catch {
+            out[key] = value; // leave as-is if it isn't actually encrypted
+          }
+        } else {
+          out[key] = value;
+        }
+      } else {
+        out[key] = decryptFields(value, aggressive);
+      }
+    }
+    return out;
+  }
+
+  return node;
+}
+
 // Shared CORS headers
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -59,7 +209,6 @@ const corsHeaders = {
 };
 
 // Allow-listed upstream paths for the generic /vib/* proxy.
-// Add more paths here as needed.
 const ALLOWED_VIB_PATHS = [
   "/get/folder_contentsv3",
   "/get/fetchVideoDetailsById",
@@ -81,7 +230,6 @@ function isAllowedVibPath(pathWithoutPrefix) {
 // ============================================================
 app.use(express.json());
 
-// Handle CORS preflight
 app.options("*", (req, res) => {
   res.set(corsHeaders);
   res.sendStatus(204);
@@ -97,12 +245,33 @@ app.get("/health", (req, res) => {
 });
 
 // ------------------------------------------------------------
+// 0. Standalone decryption endpoint
+//    GET /decrypt?text=<encrypted>
+// ------------------------------------------------------------
+app.get("/decrypt", (req, res) => {
+  try {
+    const { text } = req.query;
+    if (!text) {
+      res.set(corsHeaders);
+      return res.status(400).json({ error: "Missing required query param: text" });
+    }
+    const decrypted = decryptVibrantLink(text);
+    res.set(corsHeaders);
+    res.json({ success: true, decrypted });
+  } catch (error) {
+    res.set(corsHeaders);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ------------------------------------------------------------
 // 1. Folder Contents Endpoint
 //    GET /folder_contents?course_id=...&folder_id=...&class=11
+//    Optional: &decrypt=1 to auto-decrypt file_link/pdf_link fields
 // ------------------------------------------------------------
 app.get("/folder_contents", async (req, res) => {
   try {
-    const { course_id, folder_id, class: cls } = req.query;
+    const { course_id, folder_id, class: cls, decrypt } = req.query;
 
     if (!course_id || !folder_id) {
       res.set(corsHeaders);
@@ -126,8 +295,13 @@ app.get("/folder_contents", async (req, res) => {
       maxRedirects: 5,
     });
 
+    let payload = response.data;
+    if (decrypt === "1" || decrypt === "true") {
+      payload = decryptFields(payload, false);
+    }
+
     res.set(corsHeaders);
-    res.json(response.data);
+    res.json(payload);
   } catch (error) {
     console.error("❌ Folder contents error:", error.message);
     console.error("❌ Error response:", error.response?.data);
@@ -144,7 +318,7 @@ app.get("/folder_contents", async (req, res) => {
 // ------------------------------------------------------------
 // 2. Video Details Endpoint
 //    GET /video_details?course_id=...&video_id=...&class=11
-//    (optional: ytflag, folder_wise_course, lc_app_api_url)
+//    Optional: &decrypt=1
 // ------------------------------------------------------------
 app.get("/video_details", async (req, res) => {
   try {
@@ -155,6 +329,7 @@ app.get("/video_details", async (req, res) => {
       ytflag = "0",
       folder_wise_course = "1",
       lc_app_api_url = "",
+      decrypt,
     } = req.query;
 
     if (!course_id || !video_id) {
@@ -180,8 +355,13 @@ app.get("/video_details", async (req, res) => {
       maxRedirects: 5,
     });
 
+    let payload = response.data;
+    if (decrypt === "1" || decrypt === "true") {
+      payload = decryptFields(payload, false);
+    }
+
     res.set(corsHeaders);
-    res.json(response.data);
+    res.json(payload);
   } catch (error) {
     console.error("❌ Video details error:", error.message);
     console.error("❌ Error response:", error.response?.data);
@@ -198,12 +378,12 @@ app.get("/video_details", async (req, res) => {
 // ------------------------------------------------------------
 // 3. Generic Proxy for /vib/* routes (allow-listed paths only)
 //    GET /vib/<allowed-path>?<query>
+//    Optional: &decrypt=1
 // ------------------------------------------------------------
 app.get("/vib/*", async (req, res) => {
   try {
     const pathWithoutPrefix = req.path.replace(/^\/vib/, "");
 
-    // Enforce allow-list
     if (!isAllowedVibPath(pathWithoutPrefix)) {
       res.set(corsHeaders);
       return res.status(403).json({
@@ -229,8 +409,13 @@ app.get("/vib/*", async (req, res) => {
       maxRedirects: 5,
     });
 
+    let payload = response.data;
+    if (req.query.decrypt === "1" || req.query.decrypt === "true") {
+      payload = decryptFields(payload, false);
+    }
+
     res.set(corsHeaders);
-    res.json(response.data);
+    res.json(payload);
   } catch (error) {
     console.error("❌ Proxy error:", error.message);
     console.error("❌ Error response:", error.response?.data);
@@ -267,8 +452,9 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Proxy server running on http://localhost:${PORT}`);
   console.log(`   Health check:      http://localhost:${PORT}/health`);
-  console.log(`   Folder contents:   http://localhost:${PORT}/folder_contents?course_id=...&folder_id=...&class=11`);
-  console.log(`   Video details:     http://localhost:${PORT}/video_details?course_id=...&video_id=...&class=11`);
+  console.log(`   Decrypt (single):  http://localhost:${PORT}/decrypt?text=<encrypted>`);
+  console.log(`   Folder contents:   http://localhost:${PORT}/folder_contents?course_id=...&folder_id=...&class=11&decrypt=1`);
+  console.log(`   Video details:     http://localhost:${PORT}/video_details?course_id=...&video_id=...&class=11&decrypt=1`);
   console.log(`   Generic proxy:     http://localhost:${PORT}/vib/* (allow-listed paths only)`);
 });
 
