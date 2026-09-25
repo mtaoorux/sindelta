@@ -1,26 +1,19 @@
 // ============================================================
-// Vibrant Proxy Server — Full Working Version
-// ============================================================
-// Required in package.json:
-// {
-//   "dependencies": {
-//     "express": "^4.18.2",
-//     "axios": "^1.6.0",
-//     "cors": "^2.8.5"
-//   }
-// }
+// Vibrant Proxy Server — Optimized Version
 // ============================================================
 
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
 const cors = require('cors');
+const http = require('http');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
-// ✅ CORS — MUST BE FIRST (before any routes)
+// ✅ CORS — FIRST
 // ============================================================
 app.use(cors({
     origin: '*',
@@ -30,7 +23,6 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 
-// Explicit preflight handler for all routes
 app.options('*', (req, res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
@@ -39,8 +31,50 @@ app.options('*', (req, res) => {
     res.sendStatus(204);
 });
 
-// Body parser
 app.use(express.json());
+
+// ============================================================
+// ⚡ HTTP agents — keep-alive for faster repeat requests
+// ============================================================
+const httpAgent = new http.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 50,
+    maxFreeSockets: 10
+});
+const httpsAgent = new https.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 50,
+    maxFreeSockets: 10
+});
+
+// ============================================================
+// ⚡ In-memory cache (5 min TTL)
+// ============================================================
+const CACHE_TTL_MS = 5 * 60 * 1000;   // 5 minutes
+const cache = new Map();
+
+function cacheGet(key) {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.t > CACHE_TTL_MS) {
+        cache.delete(key);
+        return null;
+    }
+    return entry.v;
+}
+
+function cacheSet(key, value) {
+    cache.set(key, { v: value, t: Date.now() });
+    // Trim old entries if the cache grows too big
+    if (cache.size > 500) {
+        const now = Date.now();
+        for (const [k, e] of cache.entries()) {
+            if (now - e.t > CACHE_TTL_MS) cache.delete(k);
+        }
+    }
+}
 
 // ============================================================
 // Credentials
@@ -92,65 +126,46 @@ function decryptVibrantLink(encryptedText) {
     if (typeof encryptedText !== "string" || !encryptedText.length) {
         throw new Error("decryptVibrantLink: input must be a non-empty string");
     }
-
     const firstPart = encryptedText.split(":")[0];
-
     let encryptedBytes;
     try {
         encryptedBytes = Buffer.from(firstPart, "base64");
     } catch (err) {
         throw new Error("decryptVibrantLink: invalid base64 input");
     }
-
     if (!encryptedBytes.length || encryptedBytes.length % 16 !== 0) {
         throw new Error("decryptVibrantLink: ciphertext length must be a multiple of 16");
     }
-
     const key = Buffer.from(AES_KEY_TEXT, "utf8");
     const iv  = Buffer.from(AES_IV_TEXT,  "utf8");
-
-    if (key.length !== 16) throw new Error("decryptVibrantLink: AES key must be 16 bytes");
-    if (iv.length  !== 16) throw new Error("decryptVibrantLink: AES IV must be 16 bytes");
+    if (key.length !== 16) throw new Error("AES key must be 16 bytes");
+    if (iv.length  !== 16) throw new Error("AES IV must be 16 bytes");
 
     const decipher = crypto.createDecipheriv("aes-128-cbc", key, iv);
     decipher.setAutoPadding(true);
-
     let decrypted;
     try {
         decrypted = Buffer.concat([decipher.update(encryptedBytes), decipher.final()]);
     } catch (err) {
-        try {
-            const decipher2 = crypto.createDecipheriv("aes-128-cbc", key, iv);
-            decipher2.setAutoPadding(false);
-            let raw = Buffer.concat([decipher2.update(encryptedBytes), decipher2.final()]);
-            if (raw.length > 0) {
-                const pad = raw[raw.length - 1];
-                if (pad > 0 && pad <= 16 && pad <= raw.length) {
-                    const tail = raw.slice(-pad);
-                    const valid = tail.every((b) => b === pad);
-                    if (valid) raw = raw.slice(0, raw.length - pad);
-                }
+        const decipher2 = crypto.createDecipheriv("aes-128-cbc", key, iv);
+        decipher2.setAutoPadding(false);
+        let raw = Buffer.concat([decipher2.update(encryptedBytes), decipher2.final()]);
+        if (raw.length > 0) {
+            const pad = raw[raw.length - 1];
+            if (pad > 0 && pad <= 16 && pad <= raw.length) {
+                const tail = raw.slice(-pad);
+                const valid = tail.every((b) => b === pad);
+                if (valid) raw = raw.slice(0, raw.length - pad);
             }
-            decrypted = raw;
-        } catch (err2) {
-            throw new Error("decryptVibrantLink: decryption failed");
         }
+        decrypted = raw;
     }
-
     return decrypted.toString("utf8");
 }
 
 const DECRYPT_FIELDS = new Set([
-    "file_link",
-    "pdf_link",
-    "video_link",
-    "url",
-    "link",
-    "encrypted_url",
-    "video_url",
-    "download_link",
-    "attachment",
-    "file",
+    "file_link","pdf_link","video_link","url","link","encrypted_url",
+    "video_url","download_link","attachment","file",
 ]);
 
 function looksEncrypted(value) {
@@ -160,44 +175,65 @@ function looksEncrypted(value) {
     try {
         const buf = Buffer.from(value.split(":")[0], "base64");
         return buf.length > 0 && buf.length % 16 === 0;
-    } catch {
-        return false;
-    }
+    } catch { return false; }
 }
 
 function decryptFields(node, aggressive = false) {
     if (node === null || node === undefined) return node;
-
-    if (Array.isArray(node)) {
-        return node.map((item) => decryptFields(item, aggressive));
-    }
-
+    if (Array.isArray(node)) return node.map((item) => decryptFields(item, aggressive));
     if (typeof node === "object") {
         const out = {};
         for (const [key, value] of Object.entries(node)) {
             if (typeof value === "string") {
                 const shouldTry = aggressive || DECRYPT_FIELDS.has(key) || looksEncrypted(value);
                 if (shouldTry) {
-                    try {
-                        out[key] = decryptVibrantLink(value);
-                    } catch {
-                        out[key] = value;
-                    }
-                } else {
-                    out[key] = value;
-                }
-            } else {
-                out[key] = decryptFields(value, aggressive);
-            }
+                    try { out[key] = decryptVibrantLink(value); }
+                    catch { out[key] = value; }
+                } else out[key] = value;
+            } else out[key] = decryptFields(value, aggressive);
         }
         return out;
     }
-
     return node;
 }
 
 // ============================================================
-// Batches dataset
+// ⚡ Upstream fetch with keep-alive + retry + timing
+// ============================================================
+async function fetchUpstream(targetUrl, cls, retries = 2) {
+    const startTime = Date.now();
+    let lastError;
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`📡 [upstream] attempt ${attempt}/${retries}: ${targetUrl}`);
+            const response = await axios.get(targetUrl, {
+                headers: getOriginHeaders(cls || 11),
+                timeout: 30000,              // 30s timeout (was 15s)
+                maxRedirects: 5,
+                httpAgent,
+                httpsAgent,
+                // Disable axios automatic JSON transform for speed
+                transformResponse: [(data) => data],
+            });
+            const elapsed = Date.now() - startTime;
+            console.log(`✅ [upstream] done in ${elapsed}ms`);
+            return response;
+        } catch (err) {
+            lastError = err;
+            const elapsed = Date.now() - startTime;
+            console.error(`❌ [upstream] attempt ${attempt} failed after ${elapsed}ms: ${err.message}`);
+            if (attempt < retries) {
+                // Small backoff before retry
+                await new Promise((r) => setTimeout(r, 500));
+            }
+        }
+    }
+    throw lastError;
+}
+
+// ============================================================
+// Batches
 // ============================================================
 const batches = [
     { id: 8,  cls: 11, title: "JEE 2028: 11th Class OG KOTA BATCH", imageUrl: "https://appx-content-v2.classx.co.in/paid_course3/2026-03-20-0_7755858005992874.jpeg", price: "Free", originalPrice: "", discount: "" },
@@ -216,16 +252,15 @@ function findBatch(id) {
 // ROUTES
 // ============================================================
 
-// Health check
 app.get("/health", (req, res) => {
-    res.json({ status: "OK", timestamp: new Date().toISOString() });
+    res.json({ status: "OK", timestamp: new Date().toISOString(), cacheSize: cache.size });
 });
 
-// Root — helpful info
 app.get("/", (req, res) => {
     res.json({
         name: "Vibrant Proxy Server",
         status: "running",
+        cacheSize: cache.size,
         routes: [
             "/health",
             "/batches",
@@ -238,36 +273,27 @@ app.get("/", (req, res) => {
     });
 });
 
-// List all batches
 app.get("/batches", (req, res) => {
     res.json({ success: true, count: batches.length, batches });
 });
 
-// Standalone decryption endpoint
 app.get("/decrypt", (req, res) => {
     try {
         const { text } = req.query;
-        if (!text) {
-            return res.status(400).json({ error: "Missing required query param: text" });
-        }
-        const decrypted = decryptVibrantLink(text);
-        res.json({ success: true, decrypted });
+        if (!text) return res.status(400).json({ error: "Missing required query param: text" });
+        res.json({ success: true, decrypted: decryptVibrantLink(text) });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
 });
 
-// ------------------------------------------------------------
-// Batch detail
-// GET /detail?id=<batchId>
-// ------------------------------------------------------------
+// ============================================================
+// /detail — cached
+// ============================================================
 app.get("/detail", async (req, res) => {
     try {
         const { id } = req.query;
-
-        if (!id) {
-            return res.status(400).json({ error: "Missing required query param: id" });
-        }
+        if (!id) return res.status(400).json({ error: "Missing required query param: id" });
 
         const batch = findBatch(id);
         if (!batch) {
@@ -278,31 +304,26 @@ app.get("/detail", async (req, res) => {
             });
         }
 
+        const cacheKey = `detail:${batch.id}:${batch.cls}`;
+        const cached = cacheGet(cacheKey);
+        if (cached) {
+            console.log(`⚡ [detail] cache HIT: ${cacheKey}`);
+            return res.json(cached);
+        }
+
         const targetUrl =
             `https://vibrantacademykotaapi.akamai.net.in/get/folder_contentsv3` +
             `?course_id=${encodeURIComponent(batch.id)}` +
-            `&parent_id=0` +
-            `&windowsapp=false` +
-            `&start=0`;
+            `&parent_id=0&windowsapp=false&start=0`;
 
-        console.log("📡 [detail] Proxying to:", targetUrl);
-
-        const response = await axios.get(targetUrl, {
-            headers: getOriginHeaders(batch.cls),
-            timeout: 15000,
-            maxRedirects: 5,
-        });
-
+        const response = await fetchUpstream(targetUrl, batch.cls);
         const payload = decryptFields(response.data, false);
 
-        res.json({
-            success: true,
-            batch,
-            contents: payload,
-        });
+        const result = { success: true, batch, contents: payload };
+        cacheSet(cacheKey, result);
+        res.json(result);
     } catch (error) {
         console.error("❌ [detail] error:", error.message);
-        console.error("❌ [detail] response:", error.response?.data);
         res.status(error.response?.status ?? 500).json({
             success: false,
             error: error.message,
@@ -312,72 +333,92 @@ app.get("/detail", async (req, res) => {
     }
 });
 
-// ------------------------------------------------------------
-// Folder contents
-// GET /folder_contents?course_id=&folder_id=&class=&decrypt=1
-// ------------------------------------------------------------
+// ============================================================
+// ⚡ /folder_contents — CACHED + retried
+// ============================================================
 app.get("/folder_contents", async (req, res) => {
+    const startTime = Date.now();
     try {
-        const { course_id, folder_id, class: cls, decrypt } = req.query;
+        const {
+            course_id,
+            folder_id,
+            parent_id,
+            class: cls,
+            decrypt
+        } = req.query;
 
-        if (!course_id || !folder_id) {
-            return res.status(400).json({
-                error: "Missing required query params: course_id and folder_id",
-            });
+        if (!course_id) {
+            return res.status(400).json({ error: "Missing required query param: course_id" });
+        }
+
+        // Accept either folder_id or parent_id, default to -1 (or 0)
+        const folderId = folder_id ?? parent_id ?? '-1';
+
+        const cacheKey = `folder:${course_id}:${folderId}:${cls || 11}:${decrypt || 0}`;
+        const cached = cacheGet(cacheKey);
+        if (cached) {
+            const elapsed = Date.now() - startTime;
+            console.log(`⚡ [folder_contents] cache HIT in ${elapsed}ms: ${cacheKey}`);
+            return res.json(cached);
         }
 
         const targetUrl =
             `https://vibrantacademykotaapi.akamai.net.in/get/folder_contentsv3` +
             `?course_id=${encodeURIComponent(course_id)}` +
-            `&parent_id=${encodeURIComponent(folder_id)}` +
+            `&parent_id=${encodeURIComponent(folderId)}` +
             `&windowsapp=false` +
             `&start=0`;
 
-        console.log("📡 [folder_contents] Proxying to:", targetUrl);
-
-        const response = await axios.get(targetUrl, {
-            headers: getOriginHeaders(cls || 11),
-            timeout: 15000,
-            maxRedirects: 5,
-        });
+        const response = await fetchUpstream(targetUrl, cls || 11);
 
         let payload = response.data;
+        // axios returns a string now (transformResponse disabled)
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) {}
+        }
+
         if (decrypt === "1" || decrypt === "true") {
             payload = decryptFields(payload, false);
         }
 
+        cacheSet(cacheKey, payload);
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ [folder_contents] done in ${elapsed}ms: ${cacheKey}`);
         res.json(payload);
     } catch (error) {
-        console.error("❌ [folder_contents] error:", error.message);
-        console.error("❌ [folder_contents] response:", error.response?.data);
+        const elapsed = Date.now() - startTime;
+        console.error(`❌ [folder_contents] failed after ${elapsed}ms:`, error.message);
         res.status(error.response?.status ?? 500).json({
             error: error.message,
             status: error.response?.status,
             data: error.response?.data ?? null,
+            elapsedMs: elapsed
         });
     }
 });
 
-// ------------------------------------------------------------
-// Video details
-// GET /video_details?course_id=&video_id=&class=&decrypt=1
-// ------------------------------------------------------------
+// ============================================================
+// /video_details — cached
+// ============================================================
 app.get("/video_details", async (req, res) => {
     try {
         const {
-            course_id,
-            video_id,
-            class: cls,
-            ytflag = "0",
-            folder_wise_course = "1",
-            lc_app_api_url = "",
-            decrypt,
+            course_id, video_id, class: cls,
+            ytflag = "0", folder_wise_course = "1",
+            lc_app_api_url = "", decrypt
         } = req.query;
 
         if (!course_id || !video_id) {
             return res.status(400).json({
-                error: "Missing required query params: course_id and video_id",
+                error: "Missing required query params: course_id and video_id"
             });
+        }
+
+        const cacheKey = `video:${course_id}:${video_id}:${cls || 11}:${decrypt || 0}`;
+        const cached = cacheGet(cacheKey);
+        if (cached) {
+            console.log(`⚡ [video_details] cache HIT: ${cacheKey}`);
+            return res.json(cached);
         }
 
         const targetUrl =
@@ -388,23 +429,20 @@ app.get("/video_details", async (req, res) => {
             `&folder_wise_course=${encodeURIComponent(folder_wise_course)}` +
             `&lc_app_api_url=${encodeURIComponent(lc_app_api_url)}`;
 
-        console.log("📡 [video_details] Proxying to:", targetUrl);
-
-        const response = await axios.get(targetUrl, {
-            headers: getOriginHeaders(cls || 11),
-            timeout: 15000,
-            maxRedirects: 5,
-        });
+        const response = await fetchUpstream(targetUrl, cls || 11);
 
         let payload = response.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) {}
+        }
         if (decrypt === "1" || decrypt === "true") {
             payload = decryptFields(payload, false);
         }
 
+        cacheSet(cacheKey, payload);
         res.json(payload);
     } catch (error) {
         console.error("❌ [video_details] error:", error.message);
-        console.error("❌ [video_details] response:", error.response?.data);
         res.status(error.response?.status ?? 500).json({
             error: error.message,
             status: error.response?.status,
@@ -413,39 +451,29 @@ app.get("/video_details", async (req, res) => {
     }
 });
 
-// ------------------------------------------------------------
-// Generic proxy for ANY /vib/* path
-// GET /vib/<any-path>?<query>&class=11&decrypt=1
-// ------------------------------------------------------------
+// ============================================================
+// /vib/* — generic proxy
+// ============================================================
 app.get("/vib/*", async (req, res) => {
     try {
         const pathWithoutPrefix = req.path.replace(/^\/vib/, "");
-
-        const endpointPath =
-            pathWithoutPrefix +
+        const endpointPath = pathWithoutPrefix +
             (req.originalUrl.includes("?")
                 ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
                 : "");
-
         const targetUrl = `https://vibrantacademykotaapi.akamai.net.in${endpointPath}`;
 
-        console.log("📡 [vib] Proxying to:", targetUrl);
-
-        const response = await axios.get(targetUrl, {
-            headers: getOriginHeaders(req.query.class || 11),
-            timeout: 15000,
-            maxRedirects: 5,
-        });
-
+        const response = await fetchUpstream(targetUrl, req.query.class || 11);
         let payload = response.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) {}
+        }
         if (req.query.decrypt === "1" || req.query.decrypt === "true") {
             payload = decryptFields(payload, false);
         }
-
         res.json(payload);
     } catch (error) {
         console.error("❌ [vib] error:", error.message);
-        console.error("❌ [vib] response:", error.response?.data);
         res.status(error.response?.status ?? 500).json({
             error: error.message,
             status: error.response?.status,
@@ -454,16 +482,13 @@ app.get("/vib/*", async (req, res) => {
     }
 });
 
-// ------------------------------------------------------------
-// 404 Handler
-// ------------------------------------------------------------
+// ============================================================
+// 404 + Error handler
+// ============================================================
 app.use((req, res) => {
     res.status(404).json({ error: "Route not found", path: req.path });
 });
 
-// ------------------------------------------------------------
-// Global Error Handler
-// ------------------------------------------------------------
 app.use((err, req, res, next) => {
     console.error("❌ Unhandled error:", err);
     res.status(500).json({ error: "Internal server error", message: err.message });
@@ -473,15 +498,14 @@ app.use((err, req, res, next) => {
 // Start server
 // ============================================================
 app.listen(PORT, () => {
-    console.log("🚀 Vibrant Proxy Server running on port " + PORT);
-    console.log("   Health:            /health");
-    console.log("   Root info:         /");
-    console.log("   Batches list:      /batches");
-    console.log("   Decrypt:           /decrypt?text=<encrypted>");
-    console.log("   Batch detail:      /detail?id=8");
-    console.log("   Folder contents:   /folder_contents?course_id=8&folder_id=-1&class=11&decrypt=1");
-    console.log("   Video details:     /video_details?course_id=8&video_id=123&class=11&decrypt=1");
-    console.log("   Open proxy:        /vib/<any-path>?class=11&decrypt=1");
+    console.log(`🚀 Vibrant Proxy Server on port ${PORT}`);
+    console.log(`   /health              →  status check`);
+    console.log(`   /detail?id=8         →  batch detail`);
+    console.log(`   /folder_contents?... →  folder listing (cached 5min)`);
+    console.log(`   /video_details?...   →  video details (cached 5min)`);
+    console.log(`   ⚡ Cache TTL: 5 minutes`);
+    console.log(`   ⚡ Keep-alive: enabled`);
+    console.log(`   ⚡ Timeout: 30s (with 2 retries)`);
 });
 
 module.exports = app;
