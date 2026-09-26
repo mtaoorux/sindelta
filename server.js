@@ -1,5 +1,5 @@
 // ============================================================
-// Vibrant Proxy Server — Optimized Version
+// Vibrant Proxy Server — Optimized + Rate-Limit-Safe Version
 // ============================================================
 
 const express = require('express');
@@ -34,6 +34,35 @@ app.options('*', (req, res) => {
 app.use(express.json());
 
 // ============================================================
+// 🛡️ Simple per-IP rate limiter (protects YOUR server)
+// ============================================================
+const IP_WINDOW_MS = 60 * 1000;      // 1 minute
+const IP_MAX_REQUESTS = 120;         // per IP per minute
+const ipHits = new Map();
+
+app.use((req, res, next) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const now = Date.now();
+    let entry = ipHits.get(ip);
+    if (!entry || now > entry.reset) {
+        entry = { count: 0, reset: now + IP_WINDOW_MS };
+        ipHits.set(ip, entry);
+    }
+    entry.count++;
+    if (entry.count > IP_MAX_REQUESTS) {
+        res.set('Retry-After', '60');
+        return res.status(429).json({ error: 'Too many requests from your IP, slow down.' });
+    }
+    // Periodic cleanup
+    if (ipHits.size > 1000) {
+        for (const [k, v] of ipHits.entries()) {
+            if (now > v.reset) ipHits.delete(k);
+        }
+    }
+    next();
+});
+
+// ============================================================
 // ⚡ HTTP agents — keep-alive for faster repeat requests
 // ============================================================
 const httpAgent = new http.Agent({
@@ -50,9 +79,9 @@ const httpsAgent = new https.Agent({
 });
 
 // ============================================================
-// ⚡ In-memory cache (5 min TTL)
+// ⚡ In-memory cache (15 min TTL — eases upstream 429)
 // ============================================================
-const CACHE_TTL_MS = 5 * 60 * 1000;   // 5 minutes
+const CACHE_TTL_MS = 15 * 60 * 1000;   // 15 minutes
 const cache = new Map();
 
 function cacheGet(key) {
@@ -67,13 +96,68 @@ function cacheGet(key) {
 
 function cacheSet(key, value) {
     cache.set(key, { v: value, t: Date.now() });
-    // Trim old entries if the cache grows too big
     if (cache.size > 500) {
         const now = Date.now();
         for (const [k, e] of cache.entries()) {
             if (now - e.t > CACHE_TTL_MS) cache.delete(k);
         }
     }
+}
+
+// ============================================================
+// ⚡ Rate limiter + request queue (prevents 429 from upstream)
+// ============================================================
+const RATE_LIMIT = {
+    maxRequests: 3,        // max concurrent requests to upstream
+    windowMs: 1000,        // per 1 second window
+    queue: [],
+    activeCount: 0,
+    windowStart: Date.now(),
+    requestCount: 0,
+};
+
+function enqueueRequest(fn) {
+    return new Promise((resolve, reject) => {
+        RATE_LIMIT.queue.push({ fn, resolve, reject });
+        processQueue();
+    });
+}
+
+async function processQueue() {
+    if (RATE_LIMIT.queue.length === 0) return;
+    if (RATE_LIMIT.activeCount >= RATE_LIMIT.maxRequests) return;
+
+    const now = Date.now();
+    if (now - RATE_LIMIT.windowStart >= RATE_LIMIT.windowMs) {
+        RATE_LIMIT.windowStart = now;
+        RATE_LIMIT.requestCount = 0;
+    }
+
+    if (RATE_LIMIT.requestCount >= RATE_LIMIT.maxRequests) {
+        const waitMs = RATE_LIMIT.windowMs - (now - RATE_LIMIT.windowStart);
+        setTimeout(processQueue, waitMs + 50);
+        return;
+    }
+
+    const item = RATE_LIMIT.queue.shift();
+    if (!item) return;
+
+    RATE_LIMIT.activeCount++;
+    RATE_LIMIT.requestCount++;
+
+    // Fire and forget — errors handled inside fetchUpstream
+    Promise.resolve()
+        .then(() => item.fn())
+        .then((result) => item.resolve(result))
+        .catch((err) => item.reject(err))
+        .finally(() => {
+            RATE_LIMIT.activeCount--;
+            setImmediate(processQueue);
+        });
+}
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
 }
 
 // ============================================================
@@ -198,38 +282,85 @@ function decryptFields(node, aggressive = false) {
 }
 
 // ============================================================
-// ⚡ Upstream fetch with keep-alive + retry + timing
+// ⚡ Upstream fetch — rate-limited, 429-aware, backoff
 // ============================================================
-async function fetchUpstream(targetUrl, cls, retries = 2) {
+async function fetchUpstream(targetUrl, cls, retries = 3) {
     const startTime = Date.now();
-    let lastError;
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            console.log(`📡 [upstream] attempt ${attempt}/${retries}: ${targetUrl}`);
-            const response = await axios.get(targetUrl, {
-                headers: getOriginHeaders(cls || 11),
-                timeout: 30000,              // 30s timeout (was 15s)
-                maxRedirects: 5,
-                httpAgent,
-                httpsAgent,
-                // Disable axios automatic JSON transform for speed
-                transformResponse: [(data) => data],
-            });
-            const elapsed = Date.now() - startTime;
-            console.log(`✅ [upstream] done in ${elapsed}ms`);
-            return response;
-        } catch (err) {
-            lastError = err;
-            const elapsed = Date.now() - startTime;
-            console.error(`❌ [upstream] attempt ${attempt} failed after ${elapsed}ms: ${err.message}`);
-            if (attempt < retries) {
-                // Small backoff before retry
-                await new Promise((r) => setTimeout(r, 500));
+    return enqueueRequest(async () => {
+        let lastError;
+
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                console.log(`📡 [upstream] attempt ${attempt}/${retries}: ${targetUrl}`);
+                const response = await axios.get(targetUrl, {
+                    headers: getOriginHeaders(cls || 11),
+                    timeout: 30000,
+                    maxRedirects: 5,
+                    httpAgent,
+                    httpsAgent,
+                    transformResponse: [(data) => data],
+                    validateStatus: (s) => s < 500, // don't throw on 429
+                });
+
+                // Handle 429 explicitly — wait and retry
+                if (response.status === 429) {
+                    const retryAfter = parseInt(response.headers['retry-after'] || '0', 10);
+                    const waitMs = retryAfter > 0
+                        ? retryAfter * 1000
+                        : Math.min(1000 * Math.pow(2, attempt), 30000);
+
+                    console.warn(`⏳ [upstream] 429 rate limited. Waiting ${waitMs}ms before retry ${attempt}/${retries}`);
+                    if (attempt < retries) {
+                        await sleep(waitMs);
+                        continue;
+                    }
+                    const err = new Error('Upstream rate limit exceeded (429)');
+                    err.response = response;
+                    throw err;
+                }
+
+                const elapsed = Date.now() - startTime;
+                console.log(`✅ [upstream] done in ${elapsed}ms (status ${response.status})`);
+                return response;
+            } catch (err) {
+                lastError = err;
+
+                // Do NOT retry 4xx client errors except 429
+                if (err.response && err.response.status >= 400 && err.response.status < 500 && err.response.status !== 429) {
+                    console.error(`❌ [upstream] client error ${err.response.status}, not retrying`);
+                    throw err;
+                }
+
+                const elapsed = Date.now() - startTime;
+                console.error(`❌ [upstream] attempt ${attempt} failed after ${elapsed}ms: ${err.message}`);
+
+                if (attempt < retries) {
+                    const backoff = Math.min(500 * Math.pow(2, attempt - 1), 8000);
+                    console.log(`⏳ [upstream] backing off ${backoff}ms...`);
+                    await sleep(backoff);
+                }
             }
         }
+        throw lastError;
+    });
+}
+
+// ============================================================
+// Standard error responder
+// ============================================================
+function sendError(res, error, extra = {}) {
+    const status = error.response?.status ?? 500;
+    if (status === 429) {
+        res.set('Retry-After', '10');
     }
-    throw lastError;
+    res.status(status).json({
+        success: false,
+        error: error.message,
+        status,
+        data: error.response?.data ?? null,
+        ...extra,
+    });
 }
 
 // ============================================================
@@ -253,7 +384,13 @@ function findBatch(id) {
 // ============================================================
 
 app.get("/health", (req, res) => {
-    res.json({ status: "OK", timestamp: new Date().toISOString(), cacheSize: cache.size });
+    res.json({
+        status: "OK",
+        timestamp: new Date().toISOString(),
+        cacheSize: cache.size,
+        queueLength: RATE_LIMIT.queue.length,
+        activeUpstream: RATE_LIMIT.activeCount,
+    });
 });
 
 app.get("/", (req, res) => {
@@ -291,6 +428,7 @@ app.get("/decrypt", (req, res) => {
 // /detail — cached
 // ============================================================
 app.get("/detail", async (req, res) => {
+    const startTime = Date.now();
     try {
         const { id } = req.query;
         if (!id) return res.status(400).json({ error: "Missing required query param: id" });
@@ -317,19 +455,18 @@ app.get("/detail", async (req, res) => {
             `&parent_id=0&windowsapp=false&start=0`;
 
         const response = await fetchUpstream(targetUrl, batch.cls);
-        const payload = decryptFields(response.data, false);
+        let payload = response.data;
+        if (typeof payload === 'string') {
+            try { payload = JSON.parse(payload); } catch (e) {}
+        }
+        payload = decryptFields(payload, false);
 
         const result = { success: true, batch, contents: payload };
         cacheSet(cacheKey, result);
         res.json(result);
     } catch (error) {
         console.error("❌ [detail] error:", error.message);
-        res.status(error.response?.status ?? 500).json({
-            success: false,
-            error: error.message,
-            status: error.response?.status,
-            data: error.response?.data ?? null,
-        });
+        sendError(res, error, { elapsedMs: Date.now() - startTime });
     }
 });
 
@@ -351,7 +488,6 @@ app.get("/folder_contents", async (req, res) => {
             return res.status(400).json({ error: "Missing required query param: course_id" });
         }
 
-        // Accept either folder_id or parent_id, default to -1 (or 0)
         const folderId = folder_id ?? parent_id ?? '-1';
 
         const cacheKey = `folder:${course_id}:${folderId}:${cls || 11}:${decrypt || 0}`;
@@ -372,7 +508,6 @@ app.get("/folder_contents", async (req, res) => {
         const response = await fetchUpstream(targetUrl, cls || 11);
 
         let payload = response.data;
-        // axios returns a string now (transformResponse disabled)
         if (typeof payload === 'string') {
             try { payload = JSON.parse(payload); } catch (e) {}
         }
@@ -388,12 +523,7 @@ app.get("/folder_contents", async (req, res) => {
     } catch (error) {
         const elapsed = Date.now() - startTime;
         console.error(`❌ [folder_contents] failed after ${elapsed}ms:`, error.message);
-        res.status(error.response?.status ?? 500).json({
-            error: error.message,
-            status: error.response?.status,
-            data: error.response?.data ?? null,
-            elapsedMs: elapsed
-        });
+        sendError(res, error, { elapsedMs: elapsed });
     }
 });
 
@@ -401,6 +531,7 @@ app.get("/folder_contents", async (req, res) => {
 // /video_details — cached
 // ============================================================
 app.get("/video_details", async (req, res) => {
+    const startTime = Date.now();
     try {
         const {
             course_id, video_id, class: cls,
@@ -443,11 +574,7 @@ app.get("/video_details", async (req, res) => {
         res.json(payload);
     } catch (error) {
         console.error("❌ [video_details] error:", error.message);
-        res.status(error.response?.status ?? 500).json({
-            error: error.message,
-            status: error.response?.status,
-            data: error.response?.data ?? null,
-        });
+        sendError(res, error, { elapsedMs: Date.now() - startTime });
     }
 });
 
@@ -455,6 +582,7 @@ app.get("/video_details", async (req, res) => {
 // /vib/* — generic proxy
 // ============================================================
 app.get("/vib/*", async (req, res) => {
+    const startTime = Date.now();
     try {
         const pathWithoutPrefix = req.path.replace(/^\/vib/, "");
         const endpointPath = pathWithoutPrefix +
@@ -462,6 +590,13 @@ app.get("/vib/*", async (req, res) => {
                 ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
                 : "");
         const targetUrl = `https://vibrantacademykotaapi.akamai.net.in${endpointPath}`;
+
+        const cacheKey = `vib:${endpointPath}`;
+        const cached = cacheGet(cacheKey);
+        if (cached) {
+            console.log(`⚡ [vib] cache HIT: ${cacheKey}`);
+            return res.json(cached);
+        }
 
         const response = await fetchUpstream(targetUrl, req.query.class || 11);
         let payload = response.data;
@@ -471,14 +606,12 @@ app.get("/vib/*", async (req, res) => {
         if (req.query.decrypt === "1" || req.query.decrypt === "true") {
             payload = decryptFields(payload, false);
         }
+
+        cacheSet(cacheKey, payload);
         res.json(payload);
     } catch (error) {
         console.error("❌ [vib] error:", error.message);
-        res.status(error.response?.status ?? 500).json({
-            error: error.message,
-            status: error.response?.status,
-            data: error.response?.data ?? null,
-        });
+        sendError(res, error, { elapsedMs: Date.now() - startTime });
     }
 });
 
@@ -501,11 +634,12 @@ app.listen(PORT, () => {
     console.log(`🚀 Vibrant Proxy Server on port ${PORT}`);
     console.log(`   /health              →  status check`);
     console.log(`   /detail?id=8         →  batch detail`);
-    console.log(`   /folder_contents?... →  folder listing (cached 5min)`);
-    console.log(`   /video_details?...   →  video details (cached 5min)`);
-    console.log(`   ⚡ Cache TTL: 5 minutes`);
+    console.log(`   /folder_contents?... →  folder listing (cached 15min)`);
+    console.log(`   /video_details?...   →  video details (cached 15min)`);
+    console.log(`   ⚡ Cache TTL: 15 minutes`);
     console.log(`   ⚡ Keep-alive: enabled`);
-    console.log(`   ⚡ Timeout: 30s (with 2 retries)`);
+    console.log(`   ⚡ Upstream rate limit: 3 req/sec (queued)`);
+    console.log(`   ⚡ 429 handling: respects Retry-After + exponential backoff`);
 });
 
 module.exports = app;
