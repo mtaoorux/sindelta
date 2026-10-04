@@ -1,8 +1,9 @@
-// server.js — Next Toppers API (Single File)
+// server.js — Next Toppers API + PDF API (Single File)
 // Deploy on Render: Build: npm install | Start: npm start
 
 import express from "express";
 import cors from "cors";
+import admin from "firebase-admin";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +27,17 @@ const NT_HEADERS = {
   app_id: "1770981347",
 };
 
+// Firebase config (from your project)
+const firebaseConfig = {
+  apiKey: "AIzaSyDZmIAuBBJq3S_3Px-4BUYMyc0qhWPcQdg",
+  authDomain: "pdfnt-efaa7.firebaseapp.com",
+  databaseURL: "https://pdfnt-efaa7-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "pdfnt-efaa7",
+  storageBucket: "pdfnt-efaa7.firebasestorage.app",
+  messagingSenderId: "905789895931",
+  appId: "1:905789895931:web:e1baa24e64d0c08458ec5e"
+};
+
 // Simple in-memory cache
 const cache = new Map();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
@@ -44,6 +56,32 @@ function setCache(key, value) {
   cache.set(key, { value, time: Date.now() });
 }
 
+// ─── Firebase Admin Init (for PDF API) ──────────────────────────────────────
+let bucket = null;
+try {
+  let serviceAccount;
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else {
+    // ESM-compatible dynamic import of local JSON
+    const { createRequire } = await import("module");
+    const require = createRequire(import.meta.url);
+    serviceAccount = require("./serviceAccountKey.json");
+  }
+
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: firebaseConfig.storageBucket,
+  });
+
+  bucket = admin.storage().bucket();
+  console.log("✅ Firebase Admin initialized — PDF API ready");
+} catch (err) {
+  console.warn("⚠️  Firebase Admin not initialized — PDF routes disabled");
+  console.warn("   Reason:", err.message);
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 async function ntFetch(url, body) {
   const res = await fetch(url, {
@@ -54,24 +92,49 @@ async function ntFetch(url, body) {
   return res.json();
 }
 
+// Middleware to ensure PDF API is available
+function requirePdfApi(req, res, next) {
+  if (!bucket) {
+    return res.status(503).json({
+      success: false,
+      error: "PDF API unavailable: Firebase Admin not initialized. Add serviceAccountKey.json or FIREBASE_SERVICE_ACCOUNT env var.",
+    });
+  }
+  next();
+}
+
 // ─── Health Check ───────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "Next Toppers API 🚀",
-    version: "1.0.0",
+    message: "Next Toppers + PDF API 🚀",
+    version: "1.1.0",
+    services: {
+      nt: true,
+      pdf: !!bucket,
+    },
     endpoints: {
+      // Next Toppers
       batches: "/api/nt/batches",
       home: "/api/nt/home",
       details: "/api/nt/details?course_id=XXX",
       content: "/api/nt/content?course_id=XXX&folder_id=0",
       video: "/api/nt/video?id=VDC_ID",
+      // PDF
+      pdfUrl: "/api/pdf/:course_id/:entity_id",
+      pdfDownload: "/api/pdf/download/:course_id/:entity_id",
+      pdfList: "/api/pdf/list/:course_id",
     },
   });
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime(), cache_size: cache.size });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    cache_size: cache.size,
+    pdf_service: !!bucket,
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -82,7 +145,6 @@ app.get("/api/nt/batches", async (req, res) => {
     const cached = getCache("batches");
     if (cached) return res.json({ ...cached, cached: true });
 
-    // Step 1: Master course list
     const masterData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
       view_type: "0",
       cat_id: "0",
@@ -99,14 +161,12 @@ app.get("/api/nt/batches", async (req, res) => {
       if (courseLayout?.list) allMasterCourses = courseLayout.list;
     }
 
-    // Step 2: Fetch categories
     const homeData = await ntFetch("https://home.nexttoppers.com/home/content", {});
     const featureLayout = homeData.data?.find((l) => l.layout_type === "layout_feature");
     const categories = featureLayout?.list || [];
 
     const categorizedBatchIds = new Set();
 
-    // Step 3: Map categories -> sub-categories -> batches
     const batchPromises = categories.map(async (category) => {
       const batchData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
         view_type: "0",
@@ -132,7 +192,6 @@ app.get("/api/nt/batches", async (req, res) => {
         }
       }
 
-      // Sub-categories
       const subCatPromises = subCategories.map(async (sub) => {
         const subBatchData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
           view_type: "0",
@@ -174,7 +233,6 @@ app.get("/api/nt/batches", async (req, res) => {
 
     const fullCatalogTree = await Promise.all(batchPromises);
 
-    // Step 4: Others
     const othersBatches = allMasterCourses.filter((c) => !categorizedBatchIds.has(c.id));
     if (othersBatches.length > 0) {
       fullCatalogTree.push({
@@ -309,7 +367,6 @@ app.get("/api/nt/video", async (req, res) => {
   }
 
   try {
-    // Step 1: Fetch media headers
     const headerRes = await fetch(
       "https://nexttoppers.com/api/media-headers?deviceType=1&userId=0",
       {
@@ -332,7 +389,6 @@ app.get("/api/nt/video", async (req, res) => {
     let licenseUrl = "";
     let type = "hls";
 
-    // Step 2: Try DRM
     try {
       const drmRes = await fetch("https://api.videocrypt.com/getVideoDetailsDrm", {
         method: "POST",
@@ -355,7 +411,6 @@ app.get("/api/nt/video", async (req, res) => {
       console.warn("DRM failed, trying non-DRM...");
     }
 
-    // Step 3: Fallback to non-DRM
     if (!m3u8Url) {
       try {
         const nonDrmRes = await fetch("https://api.videocrypt.com/getVideoDetails", {
@@ -400,6 +455,104 @@ app.get("/api/nt/video", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  PDF ROUTES — Firebase Storage (pdfs/{course_id}/{entity_id})
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── ROUTE 6: Get PDF signed URL + metadata ────────────────────────────────
+app.get("/api/pdf/:course_id/:entity_id", requirePdfApi, async (req, res) => {
+  try {
+    const { course_id, entity_id } = req.params;
+    const filePath = `pdfs/${course_id}/${entity_id}`;
+    const file = bucket.file(filePath);
+
+    const [exists] = await file.exists();
+    if (!exists) {
+      return res.status(404).json({ success: false, error: "PDF not found", path: filePath });
+    }
+
+    const [url] = await file.getSignedUrl({
+      action: "read",
+      expires: Date.now() + 60 * 60 * 1000, // 1 hour
+    });
+
+    const [metadata] = await file.getMetadata();
+
+    res.json({
+      success: true,
+      course_id,
+      entity_id,
+      path: filePath,
+      url,
+      metadata: {
+        name: metadata.name,
+        size: Number(metadata.size) || 0,
+        contentType: metadata.contentType,
+        updated: metadata.updated,
+      },
+    });
+  } catch (error) {
+    console.error("PDF error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─── ROUTE 7: Stream PDF directly ──────────────────────────────────────────
+app.get("/api/pdf/download/:course_id/:entity_id", requirePdfApi, async (req, res) => {
+  try {
+    const { course_id, entity_id } = req.params;
+    const filePath = `pdfs/${course_id}/${entity_id}`;
+    const file = bucket.file(filePath);
+
+    const [exists] = await file.exists();
+    if (!exists) {
+      return res.status(404).json({ success: false, error: "PDF not found" });
+    }
+
+    const [metadata] = await file.getMetadata();
+    res.setHeader("Content-Type", metadata.contentType || "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(entity_id)}"`);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    file.createReadStream().pipe(res);
+  } catch (error) {
+    console.error("PDF stream error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// ─── ROUTE 8: List all PDFs in a course ────────────────────────────────────
+app.get("/api/pdf/list/:course_id", requirePdfApi, async (req, res) => {
+  try {
+    const { course_id } = req.params;
+    const prefix = `pdfs/${course_id}/`;
+
+    const [files] = await bucket.getFiles({ prefix });
+
+    const pdfs = files
+      .filter((f) => !f.name.endsWith("/"))
+      .map((file) => ({
+        entity_id: file.name.slice(prefix.length),
+        path: file.name,
+        size: Number(file.metadata.size) || 0,
+        contentType: file.metadata.contentType,
+        updated: file.metadata.updated,
+      }));
+
+    res.json({
+      success: true,
+      course_id,
+      count: pdfs.length,
+      pdfs,
+    });
+  } catch (error) {
+    console.error("PDF list error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ─── 404 Handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({
@@ -416,5 +569,6 @@ app.use((err, req, res, next) => {
 
 // ─── Start Server ───────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`✅ Next Toppers API running on port ${PORT}`);
+  console.log(`✅ Next Toppers + PDF API running on port ${PORT}`);
+  console.log(`   PDF service: ${bucket ? "enabled" : "disabled"}`);
 });
