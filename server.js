@@ -3,6 +3,7 @@
 
 import express from "express";
 import cors from "cors";
+import admin from "firebase-admin";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,7 +27,7 @@ const NT_HEADERS = {
   app_id: "1770981347",
 };
 
-// Firebase config
+// Firebase config (from your project)
 const firebaseConfig = {
   apiKey: "AIzaSyDZmIAuBBJq3S_3Px-4BUYMyc0qhWPcQdg",
   authDomain: "pdfnt-efaa7.firebaseapp.com",
@@ -57,12 +58,7 @@ function setCache(key, value) {
 
 // ─── Firebase Admin Init (for PDF API) ──────────────────────────────────────
 let bucket = null;
-
 try {
-  // ✅ FIX: Dynamic import for ESM compatibility
-  const adminModule = await import("firebase-admin");
-  const admin = adminModule.default || adminModule;
-
   let serviceAccount;
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -118,11 +114,13 @@ app.get("/", (req, res) => {
       pdf: !!bucket,
     },
     endpoints: {
+      // Next Toppers
       batches: "/api/nt/batches",
       home: "/api/nt/home",
       details: "/api/nt/details?course_id=XXX",
       content: "/api/nt/content?course_id=XXX&folder_id=0",
       video: "/api/nt/video?id=VDC_ID",
+      // PDF
       pdfUrl: "/api/pdf/:course_id/:entity_id",
       pdfDownload: "/api/pdf/download/:course_id/:entity_id",
       pdfList: "/api/pdf/list/:course_id",
@@ -140,17 +138,21 @@ app.get("/health", (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  NEXT TOPPERS ROUTES (1–5)
+//  ROUTE 1: /api/nt/batches  — Full catalog tree
 // ═══════════════════════════════════════════════════════════════════════════
-
 app.get("/api/nt/batches", async (req, res) => {
   try {
     const cached = getCache("batches");
     if (cached) return res.json({ ...cached, cached: true });
 
     const masterData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
-      view_type: "0", cat_id: "0", cat_parent_id: "0", page: "1",
-      limit: "200", is_free: "0", is_trending: "0",
+      view_type: "0",
+      cat_id: "0",
+      cat_parent_id: "0",
+      page: "1",
+      limit: "200",
+      is_free: "0",
+      is_trending: "0",
     });
 
     let allMasterCourses = [];
@@ -162,12 +164,18 @@ app.get("/api/nt/batches", async (req, res) => {
     const homeData = await ntFetch("https://home.nexttoppers.com/home/content", {});
     const featureLayout = homeData.data?.find((l) => l.layout_type === "layout_feature");
     const categories = featureLayout?.list || [];
+
     const categorizedBatchIds = new Set();
 
     const batchPromises = categories.map(async (category) => {
       const batchData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
-        view_type: "0", cat_id: category.id.toString(), cat_parent_id: "0",
-        page: "1", limit: "100", is_free: "0", is_trending: "0",
+        view_type: "0",
+        cat_id: category.id.toString(),
+        cat_parent_id: "0",
+        page: "1",
+        limit: "100",
+        is_free: "0",
+        is_trending: "0",
       });
 
       let subCategories = [];
@@ -176,6 +184,7 @@ app.get("/api/nt/batches", async (req, res) => {
       if (batchData.data) {
         const catLayout = batchData.data.find((l) => l.layout_type === "category_list_layout");
         const courseLayout = batchData.data.find((l) => l.layout_type === "course_list_layout");
+
         if (catLayout?.list) subCategories = catLayout.list;
         if (courseLayout?.list) {
           directCourses = courseLayout.list;
@@ -185,8 +194,13 @@ app.get("/api/nt/batches", async (req, res) => {
 
       const subCatPromises = subCategories.map(async (sub) => {
         const subBatchData = await ntFetch("https://course.nexttoppers.com/course/all-course", {
-          view_type: "0", cat_id: sub.id.toString(), cat_parent_id: category.id.toString(),
-          page: "1", limit: "100", is_free: "0", is_trending: "0",
+          view_type: "0",
+          cat_id: sub.id.toString(),
+          cat_parent_id: category.id.toString(),
+          page: "1",
+          limit: "100",
+          is_free: "0",
+          is_trending: "0",
         });
 
         let deepBatches = [];
@@ -197,30 +211,46 @@ app.get("/api/nt/batches", async (req, res) => {
             deepBatches.forEach((c) => categorizedBatchIds.add(c.id));
           }
         }
-        return { sub_id: sub.id, sub_title: sub.title, sub_thumbnail: sub.thumbnail, batches: deepBatches };
+
+        return {
+          sub_id: sub.id,
+          sub_title: sub.title,
+          sub_thumbnail: sub.thumbnail,
+          batches: deepBatches,
+        };
       });
 
       const resolvedSubCats = await Promise.all(subCatPromises);
+
       return {
-        category_id: category.id, category_name: category.title,
-        category_icon: category.thumbnail, sub_categories: resolvedSubCats, batches: directCourses,
+        category_id: category.id,
+        category_name: category.title,
+        category_icon: category.thumbnail,
+        sub_categories: resolvedSubCats,
+        batches: directCourses,
       };
     });
 
     const fullCatalogTree = await Promise.all(batchPromises);
+
     const othersBatches = allMasterCourses.filter((c) => !categorizedBatchIds.has(c.id));
     if (othersBatches.length > 0) {
       fullCatalogTree.push({
-        category_id: "others", category_name: "Others",
+        category_id: "others",
+        category_name: "Others",
         category_icon: "https://via.placeholder.com/150/202124/FFFFFF?text=Others",
-        sub_categories: [], batches: othersBatches,
+        sub_categories: [],
+        batches: othersBatches,
       });
     }
 
     const response = {
-      success: true, message: "Next Toppers Catalog Fetched",
-      total_categories: fullCatalogTree.length, catalog: fullCatalogTree,
+      success: true,
+      message: "Next Toppers Catalog Fetched",
+      total_categories: fullCatalogTree.length,
+      catalog: fullCatalogTree,
     };
+
     setCache("batches", response);
     res.json(response);
   } catch (error) {
@@ -229,12 +259,22 @@ app.get("/api/nt/batches", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROUTE 2: /api/nt/home
+// ═══════════════════════════════════════════════════════════════════════════
 app.get("/api/nt/home", async (req, res) => {
   try {
     const cached = getCache("home");
     if (cached) return res.json({ ...cached, cached: true });
+
     const homeData = await ntFetch("https://home.nexttoppers.com/home/content", {});
-    const response = { success: true, message: "Home content fetched", data: homeData.data || [] };
+
+    const response = {
+      success: true,
+      message: "Home content fetched",
+      data: homeData.data || [],
+    };
+
     setCache("home", response);
     res.json(response);
   } catch (error) {
@@ -243,17 +283,32 @@ app.get("/api/nt/home", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROUTE 3: /api/nt/details?course_id=XXX
+// ═══════════════════════════════════════════════════════════════════════════
 app.get("/api/nt/details", async (req, res) => {
   const { course_id, parent_id = "0" } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: "course_id query parameter is required" });
+
+  if (!course_id) {
+    return res.status(400).json({ success: false, error: "course_id query parameter is required" });
+  }
 
   try {
     const cacheKey = `details:${course_id}:${parent_id}`;
     const cached = getCache(cacheKey);
     if (cached) return res.json({ ...cached, cached: true });
 
-    const data = await ntFetch("https://course.nexttoppers.com/course/course-details", { course_id, parent_id });
-    const response = { success: true, message: "Course details fetched", data: data.data || data };
+    const data = await ntFetch("https://course.nexttoppers.com/course/course-details", {
+      course_id,
+      parent_id,
+    });
+
+    const response = {
+      success: true,
+      message: "Course details fetched",
+      data: data.data || data,
+    };
+
     setCache(cacheKey, response);
     res.json(response);
   } catch (error) {
@@ -262,9 +317,15 @@ app.get("/api/nt/details", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROUTE 4: /api/nt/content?course_id=XXX&folder_id=0
+// ═══════════════════════════════════════════════════════════════════════════
 app.get("/api/nt/content", async (req, res) => {
   const { course_id, folder_id = "0", limit = "100", page = "1" } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: "course_id query parameter is required" });
+
+  if (!course_id) {
+    return res.status(400).json({ success: false, error: "course_id query parameter is required" });
+  }
 
   try {
     const cacheKey = `content:${course_id}:${folder_id}:${limit}:${page}`;
@@ -272,9 +333,21 @@ app.get("/api/nt/content", async (req, res) => {
     if (cached) return res.json({ ...cached, cached: true });
 
     const data = await ntFetch("https://course.nexttoppers.com/course/all-content", {
-      course_id, folder_id, page, limit, keyword: "", parent_course_id: "0", is_free: "",
+      course_id,
+      folder_id,
+      page,
+      limit,
+      keyword: "",
+      parent_course_id: "0",
+      is_free: "",
     });
-    const response = { success: true, message: "Content fetched", data: data.data || data };
+
+    const response = {
+      success: true,
+      message: "Content fetched",
+      data: data.data || data,
+    };
+
     setCache(cacheKey, response);
     res.json(response);
   } catch (error) {
@@ -283,47 +356,99 @@ app.get("/api/nt/content", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROUTE 5: /api/nt/video?id=VDC_ID  — Stream resolver
+// ═══════════════════════════════════════════════════════════════════════════
 app.get("/api/nt/video", async (req, res) => {
   const vdcId = req.query.id || req.query.vdcId || req.query.url;
-  if (!vdcId) return res.status(400).json({ success: false, error: "Query parameter 'id' (vdcId) is required." });
+
+  if (!vdcId) {
+    return res.status(400).json({ success: false, error: "Query parameter 'id' (vdcId) is required." });
+  }
 
   try {
-    const headerRes = await fetch("https://nexttoppers.com/api/media-headers?deviceType=1&userId=0", {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36" },
-    });
-    if (!headerRes.ok) return res.status(500).json({ success: false, error: "Failed to fetch media headers" });
+    const headerRes = await fetch(
+      "https://nexttoppers.com/api/media-headers?deviceType=1&userId=0",
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+        },
+      }
+    );
+
+    if (!headerRes.ok) {
+      return res.status(500).json({ success: false, error: "Failed to fetch media headers" });
+    }
 
     const mediaHeaders = await headerRes.json();
     const vcHeaders = { ...mediaHeaders, "Content-Type": "application/json" };
-    let m3u8Url = "", token = "", licenseUrl = "", type = "hls";
+
+    let m3u8Url = "";
+    let token = "";
+    let licenseUrl = "";
+    let type = "hls";
 
     try {
       const drmRes = await fetch("https://api.videocrypt.com/getVideoDetailsDrm", {
-        method: "POST", headers: vcHeaders, body: JSON.stringify({ name: vdcId, flag: 1 }),
+        method: "POST",
+        headers: vcHeaders,
+        body: JSON.stringify({ name: vdcId, flag: 1 }),
       });
       const drmJson = await drmRes.json();
       m3u8Url = drmJson?.data?.link?.file_url || "";
       token = drmJson?.data?.link?.token || "";
+
       if (m3u8Url) {
         type = m3u8Url.includes(".mpd") ? "dash" : "hls";
-        if (token) licenseUrl = `https://license.videocrypt.com/validateLicense?pallyconCustomdataV2=${encodeURIComponent(token)}`;
+        if (token) {
+          licenseUrl = `https://license.videocrypt.com/validateLicense?pallyconCustomdataV2=${encodeURIComponent(
+            token
+          )}`;
+        }
       }
-    } catch (e) { console.warn("DRM failed, trying non-DRM..."); }
+    } catch (e) {
+      console.warn("DRM failed, trying non-DRM...");
+    }
 
     if (!m3u8Url) {
       try {
         const nonDrmRes = await fetch("https://api.videocrypt.com/getVideoDetails", {
-          method: "POST", headers: vcHeaders, body: JSON.stringify({ name: vdcId }),
+          method: "POST",
+          headers: vcHeaders,
+          body: JSON.stringify({ name: vdcId }),
         });
         const nonDrmJson = await nonDrmRes.json();
         const d = nonDrmJson?.data;
-        m3u8Url = d?.file_url_hls || d?.link?.file_url_hls || d?.bitrate_urls?.[0]?.url || "";
+        m3u8Url =
+          d?.file_url_hls ||
+          d?.link?.file_url_hls ||
+          d?.bitrate_urls?.[0]?.url ||
+          "";
         if (m3u8Url) type = "hls";
-      } catch (e) { console.warn("Non-DRM also failed."); }
+      } catch (e) {
+        console.warn("Non-DRM also failed.");
+      }
     }
 
-    if (!m3u8Url) return res.status(404).json({ success: false, error: "Stream URL not available for this video", vdcId });
-    res.json({ success: true, platform: "nt", vdcId, url: m3u8Url, directUrl: m3u8Url, token, licenseUrl, type });
+    if (!m3u8Url) {
+      return res.status(404).json({
+        success: false,
+        error: "Stream URL not available for this video",
+        vdcId,
+      });
+    }
+
+    res.json({
+      success: true,
+      platform: "nt",
+      vdcId,
+      url: m3u8Url,
+      directUrl: m3u8Url,
+      token,
+      licenseUrl,
+      type,
+    });
   } catch (error) {
     console.error("Video error:", error);
     res.status(500).json({ success: false, error: error.message });
@@ -331,9 +456,10 @@ app.get("/api/nt/video", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  PDF ROUTES (6–8) — Firebase Storage
+//  PDF ROUTES — Firebase Storage (pdfs/{course_id}/{entity_id})
 // ═══════════════════════════════════════════════════════════════════════════
 
+// ─── ROUTE 6: Get PDF signed URL + metadata ────────────────────────────────
 app.get("/api/pdf/:course_id/:entity_id", requirePdfApi, async (req, res) => {
   try {
     const { course_id, entity_id } = req.params;
@@ -341,14 +467,29 @@ app.get("/api/pdf/:course_id/:entity_id", requirePdfApi, async (req, res) => {
     const file = bucket.file(filePath);
 
     const [exists] = await file.exists();
-    if (!exists) return res.status(404).json({ success: false, error: "PDF not found", path: filePath });
+    if (!exists) {
+      return res.status(404).json({ success: false, error: "PDF not found", path: filePath });
+    }
 
-    const [url] = await file.getSignedUrl({ action: "read", expires: Date.now() + 60 * 60 * 1000 });
+    const [url] = await file.getSignedUrl({
+      action: "read",
+      expires: Date.now() + 60 * 60 * 1000, // 1 hour
+    });
+
     const [metadata] = await file.getMetadata();
 
     res.json({
-      success: true, course_id, entity_id, path: filePath, url,
-      metadata: { name: metadata.name, size: Number(metadata.size) || 0, contentType: metadata.contentType, updated: metadata.updated },
+      success: true,
+      course_id,
+      entity_id,
+      path: filePath,
+      url,
+      metadata: {
+        name: metadata.name,
+        size: Number(metadata.size) || 0,
+        contentType: metadata.contentType,
+        updated: metadata.updated,
+      },
     });
   } catch (error) {
     console.error("PDF error:", error);
@@ -356,6 +497,7 @@ app.get("/api/pdf/:course_id/:entity_id", requirePdfApi, async (req, res) => {
   }
 });
 
+// ─── ROUTE 7: Stream PDF directly ──────────────────────────────────────────
 app.get("/api/pdf/download/:course_id/:entity_id", requirePdfApi, async (req, res) => {
   try {
     const { course_id, entity_id } = req.params;
@@ -363,7 +505,9 @@ app.get("/api/pdf/download/:course_id/:entity_id", requirePdfApi, async (req, re
     const file = bucket.file(filePath);
 
     const [exists] = await file.exists();
-    if (!exists) return res.status(404).json({ success: false, error: "PDF not found" });
+    if (!exists) {
+      return res.status(404).json({ success: false, error: "PDF not found" });
+    }
 
     const [metadata] = await file.getMetadata();
     res.setHeader("Content-Type", metadata.contentType || "application/pdf");
@@ -373,14 +517,18 @@ app.get("/api/pdf/download/:course_id/:entity_id", requirePdfApi, async (req, re
     file.createReadStream().pipe(res);
   } catch (error) {
     console.error("PDF stream error:", error);
-    if (!res.headersSent) res.status(500).json({ success: false, error: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   }
 });
 
+// ─── ROUTE 8: List all PDFs in a course ────────────────────────────────────
 app.get("/api/pdf/list/:course_id", requirePdfApi, async (req, res) => {
   try {
     const { course_id } = req.params;
     const prefix = `pdfs/${course_id}/`;
+
     const [files] = await bucket.getFiles({ prefix });
 
     const pdfs = files
@@ -393,18 +541,27 @@ app.get("/api/pdf/list/:course_id", requirePdfApi, async (req, res) => {
         updated: file.metadata.updated,
       }));
 
-    res.json({ success: true, course_id, count: pdfs.length, pdfs });
+    res.json({
+      success: true,
+      course_id,
+      count: pdfs.length,
+      pdfs,
+    });
   } catch (error) {
     console.error("PDF list error:", error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ─── 404 & Error Handlers ───────────────────────────────────────────────────
+// ─── 404 Handler ────────────────────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).json({ success: false, error: `Route not found: ${req.method} ${req.originalUrl}` });
+  res.status(404).json({
+    success: false,
+    error: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
 });
 
+// ─── Global Error Handler ───────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ success: false, error: err.message || "Internal server error" });
