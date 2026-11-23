@@ -24,6 +24,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "*",
 };
 
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
+
 // ─── HTTP Server ─────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   // CORS preflight
@@ -52,11 +55,51 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, await getDetails(courseId, type, folderId, limit));
     }
 
-    // Route: GET /api/stream?id=20004-192
-    if (req.method === "GET" && path === "/api/stream") {
-      const id = url.searchParams.get("id");
-      if (!id) return sendJSON(res, { success: false, error: 'Missing "id". Use ?id=20004-192' }, 400);
-      return sendJSON(res, await getStream(id));
+    // Route: GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)
+    if (
+      req.method === "GET" &&
+      (path === "/api/stream" || path === "/api/nt" || path === "/api/nt/")
+    ) {
+      const id =
+        url.searchParams.get("id") ||
+        url.searchParams.get("vdcId") ||
+        url.searchParams.get("url");
+
+      if (!id) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            platform: "nt",
+            vdcId: "",
+            url: "",
+            directUrl: "",
+            token: "",
+            type: "hls",
+            error: "Query parameter 'id' (vdcId) is required.",
+          },
+          400
+        );
+      }
+
+      try {
+        return sendJSON(res, await getStream(id));
+      } catch (err) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            platform: "nt",
+            vdcId: id,
+            url: "",
+            directUrl: "",
+            token: "",
+            type: "hls",
+            error: err.message || "Failed to resolve NT stream",
+          },
+          500
+        );
+      }
     }
 
     // Route: GET /  →  tiny index
@@ -67,7 +110,7 @@ const server = http.createServer(async (req, res) => {
         endpoints: [
           "GET /api/batches",
           "GET /api/details?course_id=...&type=overview|content&folder_id=0&limit=100",
-          "GET /api/stream?id=...",
+          "GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)",
         ],
       });
     }
@@ -247,29 +290,59 @@ async function getDetails(courseId, type, folderId, limit) {
   return await apiRes.json();
 }
 
-// ─── 3. Stream (extract m3u8 from eduvibe) ───────────────────────────────────
-async function getStream(id) {
-  const targetUrl = `https://eduvibe-nt.pages.dev/play/${id}`;
-  const res = await fetch(targetUrl, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    },
+// ─── 3. Stream / Lecture (Next-Toppers → Videocrypt resolver) ────────────────
+async function getStream(vdcId) {
+  // Step 1: fetch the dynamic media headers from Next-Toppers
+  const headerRes = await fetch(
+    "https://nexttoppers.com/api/media-headers?deviceType=1&userId=0",
+    {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+    }
+  );
+
+  if (!headerRes.ok) {
+    throw new Error(`Failed to fetch Next-Toppers media headers (HTTP ${headerRes.status})`);
+  }
+
+  const mediaHeaders = await headerRes.json();
+  const ntVcHeaders = {
+    ...mediaHeaders,
+    "Content-Type": "application/json",
+  };
+
+  // Step 2: resolve the DRM video details from Videocrypt
+  const res = await fetch("https://api.videocrypt.com/getVideoDetailsDrm", {
+    method: "POST",
+    headers: ntVcHeaders,
+    body: JSON.stringify({ name: vdcId, flag: 1 }),
   });
-  const html = await res.text();
 
-  const m3u8Regex = /(https?:\/\/[^\s"'<>]*?\.m3u8[^\s"'<>]*)/i;
-  const match = html.match(m3u8Regex);
+  const json = await res.json();
+  const m3u8Url = json?.data?.link?.file_url || "";
+  const token = json?.data?.link?.token || "";
 
-  if (match) {
-    const cleanUrl = match[1].replace(/\\\//g, "/");
-    return { success: true, source: targetUrl, streamUrl: cleanUrl };
+  if (!m3u8Url) {
+    return {
+      success: false,
+      platform: "nt",
+      vdcId,
+      url: "",
+      directUrl: "",
+      token: token || "",
+      type: "hls",
+      error: "Stream URL not available for this Next-Toppers video",
+    };
   }
 
   return {
-    success: false,
-    source: targetUrl,
-    error: "m3u8 link not found in source HTML",
+    success: true,
+    platform: "nt",
+    vdcId,
+    url: m3u8Url,
+    directUrl: m3u8Url,
+    token: token || "",
+    type: "hls",
   };
 }
