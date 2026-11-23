@@ -18,18 +18,6 @@ const NT_HEADERS = {
   "app_id": NT_APP_ID,
 };
 
-// Extended headers required by the PDF content-details endpoint.
-const NT_PDF_HEADERS = {
-  ...NT_HEADERS,
-  "extra_value": "NEXT400",
-  "x-app-id": NT_APP_ID,
-  "x-extra-value": "NEXT400",
-  "origin": "https://nexttoppers.com",
-  "referer": "https://nexttoppers.com/",
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
-};
-
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -65,20 +53,6 @@ const server = http.createServer(async (req, res) => {
       const folderId = url.searchParams.get("folder_id") || "0";
       const limit = url.searchParams.get("limit") || "100";
       return sendJSON(res, await getDetails(courseId, type, folderId, limit));
-    }
-
-    // Route: GET /api/course/pdfurl?content_id=...
-    if (req.method === "GET" && path === "/api/course/pdfurl") {
-      const contentId =
-        url.searchParams.get("content_id") ||
-        url.searchParams.get("contentId") ||
-        "";
-
-      if (!contentId) {
-        return sendJSON(res, { success: false, error: "content_id is required" }, 400);
-      }
-
-      return sendJSON(res, await getPdfUrl(contentId));
     }
 
     // Route: GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)
@@ -136,7 +110,6 @@ const server = http.createServer(async (req, res) => {
         endpoints: [
           "GET /api/batches",
           "GET /api/details?course_id=...&type=overview|content&folder_id=0&limit=100",
-          "GET /api/course/pdfurl?content_id=...",
           "GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)",
         ],
       });
@@ -317,55 +290,7 @@ async function getDetails(courseId, type, folderId, limit) {
   return await apiRes.json();
 }
 
-// ─── 3. PDF URL resolver ─────────────────────────────────────────────────────
-async function getPdfUrl(contentId) {
-  try {
-    const res = await fetch(
-      "https://course.nexttoppers.com/course/content-details",
-      {
-        method: "POST",
-        headers: NT_PDF_HEADERS,
-        body: JSON.stringify({ content_id: String(contentId) }),
-      }
-    );
-
-    if (!res.ok) {
-      return { success: false, error: `Upstream HTTP ${res.status}` };
-    }
-
-    const body = await res.json();
-    const d = body?.data || {};
-
-    // parse download_urls (string or array)
-    let urls = [];
-    if (typeof d.download_urls === "string") {
-      try {
-        urls = JSON.parse(d.download_urls);
-      } catch {
-        urls = [];
-      }
-    } else if (Array.isArray(d.download_urls)) {
-      urls = d.download_urls;
-    }
-
-    const fileUrl =
-      urls.find((u) => u?.url?.toLowerCase().includes(".pdf"))?.url ||
-      (d.file_url && d.file_url.toLowerCase().includes(".pdf") ? d.file_url : "") ||
-      d.file_url ||
-      d.download_url ||
-      "";
-
-    if (!fileUrl) {
-      return { success: false, error: "No PDF URL found" };
-    }
-
-    return { success: true, file_url: fileUrl };
-  } catch (err) {
-    return { success: false, error: String(err?.message || err) };
-  }
-}
-
-// ─── 4. Stream / Lecture (Next-Toppers → Videocrypt resolver) ────────────────
+// ─── 3. Stream / Lecture (Next-Toppers → Videocrypt resolver) ────────────────
 async function getStream(vdcId) {
   // Step 1: fetch the dynamic media headers from Next-Toppers
   const headerRes = await fetch(
