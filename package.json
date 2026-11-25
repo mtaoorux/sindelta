@@ -1,27 +1,16 @@
 {
   "name": "classx-proxy-server",
-  "version": "1.0.0",
-  "description": "Proxy server for ClassX API with bearer token auth, multi-token fallback, and AES-256-CBC decryption",
+  "version": "1.2.0",
+  "description": "Native fetch proxy for ClassX API with caching, dedup, retry, and leak protection",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": [
-    "classx",
-    "proxy",
-    "api",
-    "bearer-token",
-    "express",
-    "axios"
-  ],
-  "author": "",
-  "license": "MIT",
-  "engines": {
-    "node": ">=18.0.0"
-  },
+  "engines": { "node": ">=18.0.0" },
   "dependencies": {
-    "axios": "^1.7.7",
+    "compression": "^1.7.4",
+    "dotenv": "^16.4.5",
     "express": "^4.21.1"
   }
 }
