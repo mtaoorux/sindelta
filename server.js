@@ -1,498 +1,291 @@
-// server.js
+// server.js — single-file MDClasses proxy with Bearer auth + AES-256 encryption + UI
 require('dotenv').config();
-
 const express = require('express');
-const compression = require('compression');
+const axios = require('axios');
 const crypto = require('crypto');
+const cors = require('cors');
 
 const app = express();
+app.use(express.json());
+app.use(cors());
+
+// ============================================
+// CONFIG (env vars override defaults)
+// ============================================
 const PORT = process.env.PORT || 3000;
+const BASE_API = process.env.BASE_API || 'https://mdclassesapi.classx.co.in';
 
-// ========================
-//  CONFIG
-// ========================
-const BASE_API = process.env.BASE_API || 'https://sciencefunapi.classx.co.in';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef';
-const CLIENT_ID = process.env.CLIENT_ID || '';
-const CLIENT_SECRET = process.env.CLIENT_SECRET || '';
-const REQUEST_TIMEOUT_MS = 20000;
+const BEARER_TOKEN =
+  process.env.BEARER_TOKEN ||
+  'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6Ijk3NjM1IiwidGltZXN0YW1wIjoxNzc4Mzg4MTY2LCJpdl92ZXIiOjcsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJamszTmpNMUlpd2laVzFoYVd3aU9pSmxjbUZpYUdsemFHVnJOR1YyWlhKQVoyMWhhV3d1WTI5dElpd2libUZ0WlNJNklrRkNTRWxUU0VWTElGUlNTVkJCVkVoSklpd2lkR1Z1WVc1MFZIbHdaU0k2SW5WelpYSWlMQ0owWlc1aGJuUk9ZVzFsSWpvaWJXUmpiR0Z6YzJWelgyUmlJaXdpZEdWdVlXNTBTV1FpT2lJaUxDSmthWE53YjNOaFlteGxJanBtWVd4elpYMC5IX0lXNDFpc1VuX3hGeDdBWmJQQjROSmdFSUQzTTl0OGE3TjZJbHN2dmt3In0.7ksXgLOXPpwLPnXR8TJZrt0tYTEfgBqWPfRc4-RVlbI';
 
-const TTL = {
-  folder: 5 * 60 * 1000,
-  videos: 60 * 1000,
-  subjects: 30 * 60 * 1000,
-  videoDetails: 10 * 60 * 1000,
-};
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
+  ? Buffer.from(process.env.ENCRYPTION_KEY, 'hex')
+  : crypto.randomBytes(32);
 
-// ========================
-//  TOKENS (server-only)
-// ========================
-const ACCOUNTS = {
-  '733566': {
-    token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjczMzU2NiIsInRpbWVzdGFtcCI6MTc5MDYwODA3MSwiaXZfdmVyIjo3LCJzZXNzaW9uIjoiZXlKMGVYQWlPaUpLVjFRaUxDSmhiR2NpT2lKSVV6STFOaUo5LmV5SnBaQ0k2SWpjek16VTJOaUlzSW1WdFlXbHNJam9pYzJGeWRHaGhhMjFoZEdoMWNqWTRNRUJuYldGcGJDNWpiMjBpTENKdVlXMWxJam9pVTJGeWRHaGhheUJOWVhSb2RYSWlMQ0owWlc1aGJuUlVlWEJsSWpvaWRYTmxjaUlzSW5SbGJtRnVkRTVoYldVaU9pSnpZMmxsYm1ObFpuVnVYMlJpSWl3aWRHVnVZVzUwU1dRaU9pSWlMQ0prYVhOd2IzTmhZbXhsSWpwbVlXeHpaWDAuR2g3S0lSQTVGRTlWMWhSMmE5Zl9ZbllCZEhMQlN2dGx6UmdSMjJwcXlnVSJ9.XpYS08YqcKcqZRdp8wYSxFWfG0VSuB9xfmJ3F0XH1LU',
-    userId: '733566',
-  },
-  '714264': {
-    token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjcxNDI2NCIsInRpbWVzdGFtcCI6MTc5MTMyMDQ5OSwiaXZfdmVyIjozNCwic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqY3hOREkyTkNJc0ltVnRZV2xzSWpvaVUwMUZXRUJIVFVGSlRDNURUMDBpTENKdVlXMWxJam9pYzIxbGVDSXNJblJsYm1GdWRGUjVjR1VpT2lKMWMyVnlJaXdpZEdWdVlXNTBUbUZ0WlNJNkluTmphV1Z1WTJWbWRXNWZaR0lpTENKMFpXNWhiblJKWkNJNklpSXNJbVJwYzNCdmMyRmliR1VpT21aaGJITmxmUS5Yak5CM2tvVEZ3elg2ckpla3hHYzhKMUhYVU1kMjZIUnBscnRPV3RvTi1NIn0.TrjUlWXttL7urT1PldVoWjW9UxK2KjugCWvND1J7SAo',
-    userId: '714264',
-  },
-  '367839': {
-    token: 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6IjM2NzgzOSIsInRpbWVzdGFtcCI6MTc5MTY1NDY0NiwiaXZfdmVyIjozMSwic2Vzc2lvbiI6ImV5SjBlWEFpT2lKS1YxUWlMQ0poYkdjaU9pSklVekkxTmlKOS5leUpwWkNJNklqTTJOemd6T1NJc0ltVnRZV2xzSWpvaU56QXhOREl6TWpJeE5rQm5iV0ZwYkM1amIyMGlMQ0p1WVcxbElqb2lSR2wyZVdFaUxDSjBaVzVoYm5SVWVYQmxJam9pZFhObGNpSXNJblJsYm1GdWRFNWhiV1VpT2lKelkybGxibU5sWm5WdVgyUmlJaXdpZEdWdVlXNTBTV1FpT2lJaUxDSmthWE53YjNOaFlteGxJanBtWVd4elpYMC5EeW9KY0tYZVZ1R19jZ01BQjNyd3lNR0lXTVpGZmtNZ2pqVU1GTkU2WFdjIn0._1ycmhFrmOnb6Sae6XGlYQFPEZIrNfr9-r58RPEBFJA',
-    userId: '367839',
-  },
-};
-
-const ACCOUNT_ORDER = ['733566', '367839', '714264'];
-const deadTokens = new Map();
-const DEAD_COOLDOWN = 10 * 60 * 1000;
-
-// ========================
-//  ENCRYPTION
-// ========================
-function decrypt(text) {
-  try {
-    if (typeof text !== 'string' || !text.includes(':')) return text;
-    const parts = text.split(':');
-    const iv = Buffer.from(parts.shift(), 'hex');
-    const enc = Buffer.from(parts.join(':'), 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-    let out = decipher.update(enc);
-    out = Buffer.concat([out, decipher.final()]);
-    return JSON.parse(out.toString());
-  } catch {
-    return null;
-  }
+if (ENCRYPTION_KEY.length !== 32) {
+  console.error('❌ ENCRYPTION_KEY must be 32 bytes (64 hex chars).');
+  process.exit(1);
 }
 
-// ========================
-//  CACHE + DEDUP
-// ========================
-const cache = new Map();
-const inFlight = new Map();
+const IV_LENGTH = 16;
 
-function cacheKey(endpoint, params) {
-  const sorted = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-  return `${endpoint}?${sorted}`;
+// ============================================
+// AES-256-CBC HELPERS
+// ============================================
+function encrypt(text) {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let out = cipher.update(text, 'utf8', 'hex');
+  out += cipher.final('hex');
+  return iv.toString('hex') + ':' + out;
 }
 
-function getCache(key) {
-  const e = cache.get(key);
-  if (!e) return null;
-  if (Date.now() > e.expires) { cache.delete(key); return null; }
-  return e.value;
-}
-
-function setCache(key, value, ttl) {
-  cache.set(key, { value, expires: Date.now() + ttl });
-  if (cache.size > 500) cache.delete(cache.keys().next().value);
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of cache) if (now > v.expires) cache.delete(k);
-}, 60 * 1000);
-
-function dedupe(key, fn) {
-  if (inFlight.has(key)) return inFlight.get(key);
-  const p = fn().finally(() => inFlight.delete(key));
-  inFlight.set(key, p);
-  return p;
-}
-
-// ========================
-//  NATIVE FETCH WITH TIMEOUT
-// ========================
-async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ========================
-//  SINGLE FETCH WITH RETRY
-// ========================
-async function tryFetch(endpoint, params, accountKey, retries = 2) {
-  const account = ACCOUNTS[accountKey];
-  if (!account) return { success: false, error: 'Unknown account', status: 400, account: accountKey };
-
-  const dead = deadTokens.get(accountKey);
-  if (dead && Date.now() - dead < DEAD_COOLDOWN) {
-    return { success: false, error: 'Token in cooldown', status: 401, account: accountKey };
-  }
-
-  // Build URL with query string
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    qs.append(k, v === null || v === undefined ? '' : String(v));
-  }
-  const url = `${BASE_API}${endpoint}?${qs.toString()}`;
-
-  let lastError;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      console.log(`🔗 [${accountKey}] GET ${endpoint}?${qs.toString()}`);
-
-      const res = await fetchWithTimeout(url, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${account.token}`,
-          Accept: 'application/json',
-          'User-Agent': 'okhttp/4.9.3',
-          clientid: CLIENT_ID,
-          clientsecret: CLIENT_SECRET,
-        },
-      });
-
-      // Read raw text first — ClassX sometimes returns HTML errors, encrypted strings, or empty bodies
-      const rawText = await res.text();
-
-      if (!res.ok) {
-        // 401/403 → token is bad, mark dead
-        if (res.status === 401 || res.status === 403) {
-          deadTokens.set(accountKey, Date.now());
-          console.warn(`❌ [${accountKey}] ${endpoint} → ${res.status} (token dead)`);
-          console.warn(`   Body: ${rawText.slice(0, 300)}`);
-          return { success: false, error: `HTTP ${res.status}`, status: res.status, account: accountKey };
-        }
-
-        // 429 or 5xx → transient, retry
-        if (attempt < retries && (res.status >= 500 || res.status === 429)) {
-          const backoff = 300 * Math.pow(2, attempt);
-          console.warn(`⏳ [${accountKey}] ${endpoint} → ${res.status}, retrying in ${backoff}ms`);
-          await new Promise(r => setTimeout(r, backoff));
-          lastError = { status: res.status, body: rawText };
-          continue;
-        }
-
-        console.warn(`❌ [${accountKey}] ${endpoint} → ${res.status}`);
-        console.warn(`   Body: ${rawText.slice(0, 300)}`);
-        return { success: false, error: `HTTP ${res.status}: ${rawText.slice(0, 200)}`, status: res.status, account: accountKey };
-      }
-
-      // Empty body?
-      if (!rawText || rawText.trim() === '') {
-        console.warn(`⚠️  [${accountKey}] ${endpoint} → 200 but EMPTY body`);
-        return { success: false, error: 'Empty response from upstream', status: 502, account: accountKey };
-      }
-
-      // Parse JSON
-      let data;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        // Maybe it's an encrypted string
-        const d = decrypt(rawText);
-        if (d !== null) {
-          data = d;
-        } else {
-          console.warn(`⚠️  [${accountKey}] ${endpoint} → 200 but not JSON`);
-          console.warn(`   Body: ${rawText.slice(0, 300)}`);
-          return { success: false, error: 'Upstream returned non-JSON', status: 502, account: accountKey, rawPreview: rawText.slice(0, 300) };
-        }
-      }
-
-      // Encrypted wrapper `{ encrypted: "iv:ct" }`
-      if (data && typeof data === 'object' && data.encrypted) {
-        const d = decrypt(data.encrypted);
-        if (d !== null) data = d;
-      }
-
-      // Some ClassX endpoints wrap data in { status: 'success', data: ... }
-      // — leave as-is, deepClean handles it.
-      console.log(`✅ [${accountKey}] ${endpoint} → 200 (${rawText.length} bytes)`);
-      deadTokens.delete(accountKey);
-      return { success: true, data, status: 200, account: accountKey };
-
-    } catch (err) {
-      lastError = err;
-      const isAbort = err.name === 'AbortError';
-      console.warn(`❌ [${accountKey}] ${endpoint} → ${isAbort ? 'TIMEOUT' : err.message}`);
-
-      if (attempt < retries && (isAbort || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT')) {
-        const backoff = 300 * Math.pow(2, attempt);
-        await new Promise(r => setTimeout(r, backoff));
-        continue;
-      }
-
-      return {
-        success: false,
-        error: isAbort ? 'Request timeout' : err.message,
-        status: isAbort ? 504 : 500,
-        account: accountKey,
-      };
-    }
-  }
-
-  return {
-    success: false,
-    error: lastError?.message || `Failed after ${retries + 1} attempts`,
-    status: lastError?.status || 500,
-    account: accountKey,
-  };
-}
-
-// ========================
-//  FETCH WITH FALLBACK + CACHE + DEDUP
-// ========================
-async function fetchClassX(endpoint, params = {}, preferredAccount = null, ttl = 60_000) {
-  const key = cacheKey(endpoint, params);
-
-  const cached = getCache(key);
-  if (cached) return { ...cached, cached: true };
-
-  return dedupe(key, async () => {
-    const order = preferredAccount
-      ? [preferredAccount, ...ACCOUNT_ORDER.filter(k => k !== preferredAccount)]
-      : ACCOUNT_ORDER;
-
-    const attempts = [];
-    for (const accountKey of order) {
-      const result = await tryFetch(endpoint, params, accountKey);
-      attempts.push({ account: accountKey, status: result.status, success: result.success });
-
-      if (result.success) {
-        const payload = { ...result, attempts };
-        setCache(key, payload, ttl);
-        return payload;
-      }
-
-      // Don't fall back on non-auth errors (404, 400, etc.)
-      if (![401, 403].includes(result.status)) {
-        return { ...result, attempts };
-      }
-    }
-
-    return { success: false, error: 'All tokens failed', status: 401, attempts };
-  });
-}
-
-// ========================
-//  LEAK FILTER
-// ========================
-const LEAK_KEYS = new Set([
-  'token', 'access_token', 'auth_token', 'bearer', 'bearer_token',
-  'session', 'session_data', 'jwt', 'refresh_token',
-  'email', 'user_email', 'mobile', 'phone', 'userid', 'user_id',
-  'userid_str', 'user_id_str', 'password', 'secret', 'clientsecret', 'client_id',
-]);
-
-function deepClean(obj) {
-  if (obj === null || obj === undefined) return obj;
-  if (Array.isArray(obj)) return obj.map(deepClean);
-  if (typeof obj !== 'object') return obj;
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (LEAK_KEYS.has(k.toLowerCase())) continue;
-    out[k] = deepClean(v);
-  }
+function decrypt(payload) {
+  const [ivHex, hex] = payload.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
+  let out = decipher.update(hex, 'hex', 'utf8');
+  out += decipher.final('utf8');
   return out;
 }
 
-// ========================
-//  MIDDLEWARE
-// ========================
-app.use(compression());
-app.use(express.json({ limit: '1mb' }));
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  next();
-});
+// ============================================
+// UPSTREAM FETCH
+// ============================================
+async function fetchFromApi(apiPath) {
+  try {
+    const res = await axios.get(`${BASE_API}${apiPath}`, {
+      headers: {
+        Authorization: `Bearer ${BEARER_TOKEN}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    });
+    return res.data;
+  } catch (e) {
+    if (e.response) {
+      throw new Error(`Upstream ${e.response.status}: ${JSON.stringify(e.response.data)}`);
+    }
+    throw new Error(e.message);
+  }
+}
 
-// ========================
-//  ROUTES
-// ========================
-
+// ============================================
+// ROUTES
+// ============================================
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    baseApi: BASE_API,
-    nodeVersion: process.version,
-    cacheSize: cache.size,
-    inFlight: inFlight.size,
-    deadTokens: [...deadTokens.entries()].map(([k, t]) => ({
-      account: k,
-      cooldownLeftMs: Math.max(0, DEAD_COOLDOWN - (Date.now() - t)),
-    })),
     timestamp: new Date().toISOString(),
+    base_api: BASE_API,
+    token_set: Boolean(BEARER_TOKEN),
   });
 });
 
-// Raw diagnostic — returns exactly what upstream returns (still leak-filtered)
-app.get('/api/debug/raw', async (req, res) => {
-  const { endpoint, course_id, folder_id, video_id, video } = req.query;
-  if (!endpoint || !course_id) {
-    return res.status(400).json({ success: false, error: 'endpoint and course_id required' });
-  }
-
-  // Build known param sets for each supported endpoint
-  const paramSets = {
-    '/get/folder_contentsv3': { course_id, parent_id: folder_id || '', windowsapp: 0, start: 0 },
-    '/get/get_previous_live_videos': { course_id, start: 0, folder_wise_course: 1, userid: -1 },
-    '/get/allsubjectfrmlivecourseclass': { courseid: course_id, start: -1 },
-    '/get/fetchVideoDetailsById': { course_id, video_id: video_id || video || '', ytflag: 0, folder_wise_course: 1, lc_app_api_url: '' },
-  };
-
-  const params = paramSets[endpoint];
-  if (!params) return res.status(400).json({ success: false, error: `Unknown endpoint. Supported: ${Object.keys(paramSets).join(', ')}` });
-
-  const result = await tryFetch(endpoint, params, ACCOUNT_ORDER[0]);
-  res.json({
-    success: result.success,
-    endpoint,
-    params,
-    status: result.status,
-    error: result.error,
-    attempts: result.attempts,
-    data: result.success ? deepClean(result.data) : undefined,
-    rawPreview: result.rawPreview,
-  });
+// Plain JSON proxies
+app.get('/api/all-subjects', async (req, res) => {
+  const { courseid, start = -1 } = req.query;
+  if (!courseid) return res.status(400).json({ success: false, error: 'courseid required' });
+  try {
+    const data = await fetchFromApi(
+      `/get/allsubjectfrmlivecourseclass?courseid=${courseid}&start=${start}`
+    );
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-app.get('/api/debug/test-tokens', async (req, res) => {
-  const { course_id } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: 'course_id is required' });
-
-  const results = {};
-  for (const key of ACCOUNT_ORDER) {
-    const r = await tryFetch('/get/folder_contentsv3', { course_id, parent_id: '', windowsapp: 0, start: 0 }, key);
-    results[key] = {
-      success: r.success,
-      status: r.status,
-      error: r.success ? undefined : r.error,
-      bytes: r.success ? JSON.stringify(r.data).length : 0,
-    };
-  }
-  res.json({ success: true, course_id, results });
-});
-
-// 1. Folder contents
 app.get('/api/folder-contents', async (req, res) => {
-  const { course_id, folder_id, account } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: 'course_id is required' });
-
-  const result = await fetchClassX(
-    '/get/folder_contentsv3',
-    { course_id, parent_id: folder_id || '', windowsapp: 0, start: 0 },
-    account || null,
-    TTL.folder
-  );
-
-  if (!result.success) return res.status(result.status).json({ success: false, error: result.error, attempts: result.attempts });
-
-  res.setHeader('X-Cache', result.cached ? 'HIT' : 'MISS');
-  res.json({ success: true, data: deepClean(result.data) });
-});
-
-// 2. Previous live videos
-app.get('/api/previous-live-videos', async (req, res) => {
-  const { course_id, account } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: 'course_id is required' });
-
-  const result = await fetchClassX(
-    '/get/get_previous_live_videos',
-    { course_id, start: 0, folder_wise_course: 1, userid: -1 },
-    account || null,
-    TTL.videos
-  );
-
-  if (!result.success) return res.status(result.status).json({ success: false, error: result.error, attempts: result.attempts });
-
-  res.setHeader('X-Cache', result.cached ? 'HIT' : 'MISS');
-  res.json({ success: true, data: deepClean(result.data) });
-});
-
-// 3. Subjects
-app.get('/api/subjects', async (req, res) => {
-  const { courseid, account } = req.query;
-  if (!courseid) return res.status(400).json({ success: false, error: 'courseid is required' });
-
-  const result = await fetchClassX(
-    '/get/allsubjectfrmlivecourseclass',
-    { courseid, start: -1 },
-    account || null,
-    TTL.subjects
-  );
-
-  if (!result.success) return res.status(result.status).json({ success: false, error: result.error, attempts: result.attempts });
-
-  res.setHeader('X-Cache', result.cached ? 'HIT' : 'MISS');
-  res.json({ success: true, data: deepClean(result.data) });
-});
-
-// 4. Video details
-app.get('/api/video-details', async (req, res) => {
-  const { course_id, video_id, account } = req.query;
-  if (!course_id || !video_id) {
-    return res.status(400).json({ success: false, error: 'course_id and video_id are required' });
+  const { course_id, folder_id, start = 0 } = req.query;
+  if (!course_id || !folder_id) {
+    return res.status(400).json({ success: false, error: 'course_id & folder_id required' });
   }
-
-  const result = await fetchClassX(
-    '/get/fetchVideoDetailsById',
-    { course_id, video_id, ytflag: 0, folder_wise_course: 1, lc_app_api_url: '' },
-    account || null,
-    TTL.videoDetails
-  );
-
-  if (!result.success) return res.status(result.status).json({ success: false, error: result.error, attempts: result.attempts });
-
-  res.setHeader('X-Cache', result.cached ? 'HIT' : 'MISS');
-  res.json({ success: true, data: deepClean(result.data) });
+  try {
+    const data = await fetchFromApi(
+      `/get/folder_contentsv3?course_id=${course_id}&parent_id=${folder_id}&windowsapp=0&start=${start}`
+    );
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// 5. Course overview (parallel)
-app.get('/api/course-overview', async (req, res) => {
-  const { course_id, account } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: 'course_id is required' });
+app.get('/api/previous-live-videos', async (req, res) => {
+  const { course_id, start = 0, userid = -1 } = req.query;
+  if (!course_id) return res.status(400).json({ success: false, error: 'course_id required' });
+  try {
+    const data = await fetchFromApi(
+      `/get/get_previous_live_videos?course_id=${course_id}&start=${start}&folder_wise_course=1&userid=${userid}`
+    );
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-  const [folders, live, subjects] = await Promise.all([
-    fetchClassX('/get/folder_contentsv3', { course_id, parent_id: '', windowsapp: 0, start: 0 }, account || null, TTL.folder),
-    fetchClassX('/get/get_previous_live_videos', { course_id, start: 0, folder_wise_course: 1, userid: -1 }, account || null, TTL.videos),
-    fetchClassX('/get/allsubjectfrmlivecourseclass', { courseid: course_id, start: -1 }, account || null, TTL.subjects),
-  ]);
+app.get('/api/video-details', async (req, res) => {
+  const { course_id, video_id, ytflag = 0 } = req.query;
+  if (!course_id || !video_id) {
+    return res.status(400).json({ success: false, error: 'course_id & video_id required' });
+  }
+  try {
+    const data = await fetchFromApi(
+      `/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=${ytflag}&folder_wise_course=1&lc_app_api_url=`
+    );
+    res.json({ success: true, data });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
 
-  res.json({
-    success: true,
-    course_id,
-    fetchedAt: new Date().toISOString(),
-    results: {
-      folder_contents: folders.success ? deepClean(folders.data) : { error: folders.error },
-      previous_live_videos: live.success ? deepClean(live.data) : { error: live.error },
-      subjects: subjects.success ? deepClean(subjects.data) : { error: subjects.error },
-    },
+// Encrypted variants
+function secureHandler(builder) {
+  return async (req, res) => {
+    try {
+      const data = await fetchFromApi(builder(req.query));
+      const encrypted = encrypt(JSON.stringify(data));
+      res.json({ success: true, encrypted, algorithm: 'aes-256-cbc' });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  };
+}
+
+app.get('/api/secure/all-subjects', secureHandler((q) => {
+  if (!q.courseid) throw new Error('courseid required');
+  return `/get/allsubjectfrmlivecourseclass?courseid=${q.courseid}&start=${q.start || -1}`;
+}));
+
+app.get('/api/secure/folder-contents', secureHandler((q) => {
+  if (!q.course_id || !q.folder_id) throw new Error('course_id & folder_id required');
+  return `/get/folder_contentsv3?course_id=${q.course_id}&parent_id=${q.folder_id}&windowsapp=0&start=${q.start || 0}`;
+}));
+
+app.get('/api/secure/previous-live-videos', secureHandler((q) => {
+  if (!q.course_id) throw new Error('course_id required');
+  return `/get/get_previous_live_videos?course_id=${q.course_id}&start=${q.start || 0}&folder_wise_course=1&userid=${q.userid || -1}`;
+}));
+
+app.get('/api/secure/video-details', secureHandler((q) => {
+  if (!q.course_id || !q.video_id) throw new Error('course_id & video_id required');
+  return `/get/fetchVideoDetailsById?course_id=${q.course_id}&video_id=${q.video_id}&ytflag=${q.ytflag || 0}&folder_wise_course=1&lc_app_api_url=`;
+}));
+
+// Decrypt helper
+app.post('/api/decrypt', (req, res) => {
+  try {
+    const { encrypted } = req.body;
+    if (!encrypted || typeof encrypted !== 'string') {
+      return res.status(400).json({ success: false, error: 'encrypted field required' });
+    }
+    res.json({ success: true, data: JSON.parse(decrypt(encrypted)) });
+  } catch (e) {
+    res.status(400).json({ success: false, error: 'Decrypt failed: ' + e.message });
+  }
+});
+
+// ============================================
+// BUILT-IN UI (served at /)
+// ============================================
+const HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MDClasses Explorer</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#222;background:#f7f8fa}
+  h1{margin-bottom:.25rem}
+  .hint{color:#666;margin-top:0;font-size:.9rem}
+  .card{background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:1rem;margin:1rem 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{margin:0 0 .75rem;font-size:1rem}
+  input,button{font:inherit;padding:.5rem .75rem;border:1px solid #cfd4da;border-radius:6px}
+  input{margin-right:.5rem;min-width:180px}
+  button{background:#2f6ef7;color:#fff;border-color:#2f6ef7;cursor:pointer}
+  button:hover{background:#2558c8}
+  pre{background:#111827;color:#e5e7eb;padding:1rem;border-radius:8px;overflow:auto;max-height:480px;font-size:.85rem}
+</style>
+</head>
+<body>
+  <h1>MDClasses API Explorer</h1>
+  <p class="hint">Token stays server-side. All calls go through this proxy.</p>
+
+  <div class="card"><h2>All Subjects</h2>
+    <input id="c1" placeholder="courseid" /><button id="b1">Fetch</button>
+  </div>
+
+  <div class="card"><h2>Folder Contents</h2>
+    <input id="c2" placeholder="course_id" /><input id="f2" placeholder="folder_id" /><button id="b2">Fetch</button>
+  </div>
+
+  <div class="card"><h2>Video Details</h2>
+    <input id="c3" placeholder="course_id" /><input id="v3" placeholder="video_id" /><button id="b3">Fetch</button>
+  </div>
+
+  <div class="card"><h2>Previous Live Videos</h2>
+    <input id="c4" placeholder="course_id" /><button id="b4">Fetch</button>
+  </div>
+
+  <div class="card"><h2>Encryption demo</h2>
+    <button id="b5">Fetch encrypted → auto-decrypt</button>
+  </div>
+
+  <pre id="out">Output will appear here…</pre>
+
+<script>
+const out = document.getElementById('out');
+const show = (x) => out.textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2);
+async function j(url, opts) {
+  const r = await fetch(url, opts);
+  const d = await r.json();
+  if (!r.ok || d.success === false) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+const bind = (id, fn) => document.getElementById(id).onclick = async () => {
+  try { show(await fn()); } catch (e) { show('Error: ' + e.message); }
+};
+
+bind('b1', async () => {
+  const c = document.getElementById('c1').value.trim();
+  if (!c) throw new Error('courseid required');
+  return (await j('/api/all-subjects?courseid=' + encodeURIComponent(c))).data;
+});
+
+bind('b2', async () => {
+  const c = document.getElementById('c2').value.trim();
+  const f = document.getElementById('f2').value.trim();
+  if (!c || !f) throw new Error('course_id & folder_id required');
+  return (await j('/api/folder-contents?course_id=' + encodeURIComponent(c) + '&folder_id=' + encodeURIComponent(f))).data;
+});
+
+bind('b3', async () => {
+  const c = document.getElementById('c3').value.trim();
+  const v = document.getElementById('v3').value.trim();
+  if (!c || !v) throw new Error('course_id & video_id required');
+  return (await j('/api/video-details?course_id=' + encodeURIComponent(c) + '&video_id=' + encodeURIComponent(v))).data;
+});
+
+bind('b4', async () => {
+  const c = document.getElementById('c4').value.trim();
+  if (!c) throw new Error('course_id required');
+  return (await j('/api/previous-live-videos?course_id=' + encodeURIComponent(c))).data;
+});
+
+bind('b5', async () => {
+  const c = document.getElementById('c1').value.trim() || 'DEMO';
+  const enc = await j('/api/secure/all-subjects?courseid=' + encodeURIComponent(c));
+  const dec = await j('/api/decrypt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ encrypted: enc.encrypted }),
   });
+  return { algorithm: enc.algorithm, note: 'ciphertext → plaintext OK', plaintext: dec.data };
 });
+</script>
+</body>
+</html>`;
 
-// ========================
-//  ERROR HANDLER
-// ========================
-app.use((err, req, res, next) => {
-  console.error('Unhandled:', err.message);
-  res.status(500).json({ success: false, error: 'Internal server error' });
-});
+app.get('/', (req, res) => res.type('html').send(HTML));
 
-// ========================
-//  START
-// ========================
+// ============================================
+// START
+// ============================================
 app.listen(PORT, () => {
   console.log(`🚀 http://localhost:${PORT}`);
-  console.log(`📡 Base API: ${BASE_API}`);
-  console.log(`⚙️  Node ${process.version} (native fetch)`);
-  console.log(`🔑 ${ACCOUNT_ORDER.length} accounts loaded`);
-  console.log('\nDebug:');
-  console.log('  GET /api/debug/test-tokens?course_id=249');
-  console.log('  GET /api/debug/raw?endpoint=/get/folder_contentsv3&course_id=249');
-  console.log('  GET /api/debug/raw?endpoint=/get/allsubjectfrmlivecourseclass&course_id=249');
-  console.log('  GET /api/debug/raw?endpoint=/get/get_previous_live_videos&course_id=249');
-  console.log('\nContent:');
-  console.log('  GET /api/folder-contents?course_id=249&folder_id=...');
-  console.log('  GET /api/previous-live-videos?course_id=249');
-  console.log('  GET /api/subjects?courseid=249');
-  console.log('  GET /api/video-details?course_id=249&video_id=...');
-  console.log('  GET /api/course-overview?course_id=249');
+  console.log(`🌐 ${BASE_API}`);
+  console.log(`🎫 Token set: ${Boolean(BEARER_TOKEN)}`);
+  console.log(`🔐 Key: ${ENCRYPTION_KEY.toString('hex').slice(0, 8)}…`);
 });
