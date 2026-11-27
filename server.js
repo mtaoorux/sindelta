@@ -18,7 +18,7 @@ const NT_HEADERS = {
   "app_id": NT_APP_ID,
 };
 
-// Headers used for the /course/content-details (PDF) endpoint.
+// Headers used for the /api/service-proxy/content-details (PDF) endpoint.
 // Uses a logged-in Bearer token + mobile platform=2 + Version 1.6.21.
 const NT_PDF_HEADERS = {
   "Accept": "*/*",
@@ -73,7 +73,7 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, await getDetails(courseId, type, folderId, limit));
     }
 
-    // ── NEW: Route: GET /api/pdf?content_id=...&course_id=...
+    // ── Route: GET /api/pdf?content_id=...&course_id=...
     //          aliases: /api/content-details
     if (
       req.method === "GET" &&
@@ -351,10 +351,10 @@ async function getDetails(courseId, type, folderId, limit) {
   return await apiRes.json();
 }
 
-// ─── 2b. PDF / Content Details (NEW) ─────────────────────────────────────────
+// ─── 2b. PDF / Content Details ───────────────────────────────────────────────
 async function getPdfDetails(contentId, courseId) {
   const targetUrl =
-    `https://course.nexttoppers.com/course/content-details` +
+    `https://course.nexttoppers.com/api/service-proxy/content-details` +
     `?content_id=${encodeURIComponent(contentId)}` +
     `&course_id=${encodeURIComponent(courseId)}`;
 
