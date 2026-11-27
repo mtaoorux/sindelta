@@ -1,27 +1,22 @@
 {
-  "name": "mdclasses-server",
+  "name": "nt-api",
   "version": "1.0.0",
-  "description": "Single-file proxy for mdclassesapi.classx.co.in with Bearer auth + AES-256 encryption + built-in UI",
+  "description": "Full Next Toppers (NT) API — single file Node.js server",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18"
   },
   "keywords": [
-    "mdclasses",
-    "classx",
-    "proxy",
-    "express",
-    "aes-256"
+    "next-toppers",
+    "nt",
+    "api",
+    "hls",
+    "videocrypt"
   ],
-  "license": "MIT",
-  "dependencies": {
-    "axios": "^1.7.7",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.1"
-  }
+  "license": "MIT"
 }
