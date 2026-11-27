@@ -1,291 +1,452 @@
-// server.js — single-file MDClasses proxy with Bearer auth + AES-256 encryption + UI
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const crypto = require('crypto');
-const cors = require('cors');
+// server.js
+// Full Next Toppers (NT) API — single file, Node.js (>=18)
+// Run: node server.js
+// Env: PORT (default 3000)
 
-const app = express();
-app.use(express.json());
-app.use(cors());
+import http from "node:http";
 
-// ============================================
-// CONFIG (env vars override defaults)
-// ============================================
 const PORT = process.env.PORT || 3000;
-const BASE_API = process.env.BASE_API || 'https://mdclassesapi.classx.co.in';
 
-const BEARER_TOKEN =
-  process.env.BEARER_TOKEN ||
-  'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6Ijk3NjM1IiwidGltZXN0YW1wIjoxNzc4Mzg4MTY2LCJpdl92ZXIiOjcsInNlc3Npb24iOiJleUowZVhBaU9pSktWMVFpTENKaGJHY2lPaUpJVXpJMU5pSjkuZXlKcFpDSTZJamszTmpNMUlpd2laVzFoYVd3aU9pSmxjbUZpYUdsemFHVnJOR1YyWlhKQVoyMWhhV3d1WTI5dElpd2libUZ0WlNJNklrRkNTRWxUU0VWTElGUlNTVkJCVkVoSklpd2lkR1Z1WVc1MFZIbHdaU0k2SW5WelpYSWlMQ0owWlc1aGJuUk9ZVzFsSWpvaWJXUmpiR0Z6YzJWelgyUmlJaXdpZEdWdVlXNTBTV1FpT2lJaUxDSmthWE53YjNOaFlteGxJanBtWVd4elpYMC5IX0lXNDFpc1VuX3hGeDdBWmJQQjROSmdFSUQzTTl0OGE3TjZJbHN2dmt3In0.7ksXgLOXPpwLPnXR8TJZrt0tYTEfgBqWPfRc4-RVlbI';
+// ─── NT Constants ────────────────────────────────────────────────────────────
+const NT_APP_ID = "1770981347"; // NT main app_id (from original batches.js/details.js)
+const NT_HEADERS = {
+  "Accept": "application/json, text/plain, */*",
+  "Content-Type": "application/json",
+  "user_id": "0",
+  "platform": "3",
+  "Version": "1",
+  "app_id": NT_APP_ID,
+};
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
-  ? Buffer.from(process.env.ENCRYPTION_KEY, 'hex')
-  : crypto.randomBytes(32);
+// Headers used for the /course/content-details (PDF) endpoint.
+// Uses a logged-in Bearer token + mobile platform=2 + Version 1.6.21.
+const NT_PDF_HEADERS = {
+  "Accept": "*/*",
+  "Content-Type": "application/json",
+  "app_id": "1770981347",
+  "Version": "1.6.21",
+  "authorization":
+    "Bearer eyJhbGciOiJlUzI1NilsInR5cCl6lkpXVCJ9.eyJ1c2VyX2lkljo1MDA0NTcwLCJhcHBfaWQiOiIxNzcwOTgMzQ3liwiZGV2aWNIX2IkljoiQjExN0FCN0EtQThBNi00RjQ3LUE1MDItOTFBOTQwNzUzMTk4liwicGxhdGZvcm0iOilyliwidXNlcl90eXBlIjoxLCJpYXQiOjE3OTQzODYzMDAsImV4cCl6MTc5Njk30DMwMH0.fvgLqOZzcl_z40D2PRAW-RGDknYclwgwixbQGRi0KyY",
+  "user_id": "5004570",
+  "priority": "u=3, i",
+  "accept-language": "en-IN;q=1.0, hi-IN;q=0.9",
+  "accept-encoding": "gzip;q=1.0, compress;q=0.5",
+  "platform": "2",
+  "user-agent":
+    "Next Toppers/1.6.21 (com.nexttoppers.app; build:1; iOS 27.0.0) Alamofire/4.9.1",
+};
 
-if (ENCRYPTION_KEY.length !== 32) {
-  console.error('❌ ENCRYPTION_KEY must be 32 bytes (64 hex chars).');
-  process.exit(1);
-}
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
 
-const IV_LENGTH = 16;
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
 
-// ============================================
-// AES-256-CBC HELPERS
-// ============================================
-function encrypt(text) {
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-  let out = cipher.update(text, 'utf8', 'hex');
-  out += cipher.final('hex');
-  return iv.toString('hex') + ':' + out;
-}
+// ─── HTTP Server ─────────────────────────────────────────────────────────────
+const server = http.createServer(async (req, res) => {
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS);
+    return res.end();
+  }
 
-function decrypt(payload) {
-  const [ivHex, hex] = payload.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const decipher = crypto.createDecipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-  let out = decipher.update(hex, 'hex', 'utf8');
-  out += decipher.final('utf8');
-  return out;
-}
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
 
-// ============================================
-// UPSTREAM FETCH
-// ============================================
-async function fetchFromApi(apiPath) {
   try {
-    const res = await axios.get(`${BASE_API}${apiPath}`, {
-      headers: {
-        Authorization: `Bearer ${BEARER_TOKEN}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      timeout: 15000,
-    });
-    return res.data;
-  } catch (e) {
-    if (e.response) {
-      throw new Error(`Upstream ${e.response.status}: ${JSON.stringify(e.response.data)}`);
+    // Route: GET /api/batches
+    if (req.method === "GET" && path === "/api/batches") {
+      return sendJSON(res, await getBatches());
     }
-    throw new Error(e.message);
+
+    // Route: GET /api/details?course_id=...&type=overview|content&folder_id=0&limit=100
+    if (req.method === "GET" && path === "/api/details") {
+      const courseId = url.searchParams.get("course_id");
+      if (!courseId) return sendJSON(res, { success: false, error: "course_id is required" }, 400);
+
+      const type = url.searchParams.get("type") || "overview";
+      const folderId = url.searchParams.get("folder_id") || "0";
+      const limit = url.searchParams.get("limit") || "100";
+      return sendJSON(res, await getDetails(courseId, type, folderId, limit));
+    }
+
+    // ── NEW: Route: GET /api/pdf?content_id=...&course_id=...
+    //          aliases: /api/content-details
+    if (
+      req.method === "GET" &&
+      (path === "/api/pdf" || path === "/api/content-details")
+    ) {
+      const contentId = url.searchParams.get("content_id");
+      const courseId = url.searchParams.get("course_id");
+
+      if (!contentId || !courseId) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            content_id: contentId || "",
+            course_id: courseId || "",
+            pdf_url: "",
+            data: null,
+            error: "Query parameters 'content_id' and 'course_id' are required.",
+          },
+          400
+        );
+      }
+
+      try {
+        return sendJSON(res, await getPdfDetails(contentId, courseId));
+      } catch (err) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            content_id: contentId,
+            course_id: courseId,
+            pdf_url: "",
+            data: null,
+            error: err.message || "Failed to resolve NT PDF content",
+          },
+          500
+        );
+      }
+    }
+
+    // Route: GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)
+    if (
+      req.method === "GET" &&
+      (path === "/api/stream" || path === "/api/nt" || path === "/api/nt/")
+    ) {
+      const id =
+        url.searchParams.get("id") ||
+        url.searchParams.get("vdcId") ||
+        url.searchParams.get("url");
+
+      if (!id) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            platform: "nt",
+            vdcId: "",
+            url: "",
+            directUrl: "",
+            token: "",
+            type: "hls",
+            error: "Query parameter 'id' (vdcId) is required.",
+          },
+          400
+        );
+      }
+
+      try {
+        return sendJSON(res, await getStream(id));
+      } catch (err) {
+        return sendJSON(
+          res,
+          {
+            success: false,
+            platform: "nt",
+            vdcId: id,
+            url: "",
+            directUrl: "",
+            token: "",
+            type: "hls",
+            error: err.message || "Failed to resolve NT stream",
+          },
+          500
+        );
+      }
+    }
+
+    // Route: GET /  →  tiny index
+    if (req.method === "GET" && path === "/") {
+      return sendJSON(res, {
+        success: true,
+        name: "NT Full API",
+        endpoints: [
+          "GET /api/batches",
+          "GET /api/details?course_id=...&type=overview|content&folder_id=0&limit=100",
+          "GET /api/pdf?content_id=...&course_id=...  (aliases: /api/content-details)",
+          "GET /api/stream?id=...  (aliases: /api/nt, vdcId, url)",
+        ],
+      });
+    }
+
+    return sendJSON(res, { success: false, error: "Not Found" }, 404);
+  } catch (err) {
+    return sendJSON(res, { success: false, error: err.message || "Server error" }, 500);
   }
+});
+
+server.listen(PORT, () => {
+  console.log(`NT API running on http://localhost:${PORT}`);
+});
+
+// ─── Helper ──────────────────────────────────────────────────────────────────
+function sendJSON(res, data, status = 200) {
+  res.writeHead(status, { ...CORS, "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(data));
 }
 
-// ============================================
-// ROUTES
-// ============================================
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    base_api: BASE_API,
-    token_set: Boolean(BEARER_TOKEN),
+// ─── 1. Batches / Catalog ────────────────────────────────────────────────────
+async function getBatches() {
+  // Step 1: Master list (captures uncategorized courses like CUET/ABHAY)
+  const masterRes = await fetch("https://course.nexttoppers.com/course/all-course", {
+    method: "POST",
+    headers: NT_HEADERS,
+    body: JSON.stringify({
+      view_type: "0",
+      cat_id: "0",
+      cat_parent_id: "0",
+      page: "1",
+      limit: "200",
+      is_free: "0",
+      is_trending: "0",
+    }),
   });
-});
-
-// Plain JSON proxies
-app.get('/api/all-subjects', async (req, res) => {
-  const { courseid, start = -1 } = req.query;
-  if (!courseid) return res.status(400).json({ success: false, error: 'courseid required' });
-  try {
-    const data = await fetchFromApi(
-      `/get/allsubjectfrmlivecourseclass?courseid=${courseid}&start=${start}`
-    );
-    res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
-
-app.get('/api/folder-contents', async (req, res) => {
-  const { course_id, folder_id, start = 0 } = req.query;
-  if (!course_id || !folder_id) {
-    return res.status(400).json({ success: false, error: 'course_id & folder_id required' });
+  const masterData = await masterRes.json();
+  let allMasterCourses = [];
+  if (masterData.data) {
+    const layout = masterData.data.find((l) => l.layout_type === "course_list_layout");
+    if (layout && layout.list) allMasterCourses = layout.list;
   }
-  try {
-    const data = await fetchFromApi(
-      `/get/folder_contentsv3?course_id=${course_id}&parent_id=${folder_id}&windowsapp=0&start=${start}`
-    );
-    res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
 
-app.get('/api/previous-live-videos', async (req, res) => {
-  const { course_id, start = 0, userid = -1 } = req.query;
-  if (!course_id) return res.status(400).json({ success: false, error: 'course_id required' });
-  try {
-    const data = await fetchFromApi(
-      `/get/get_previous_live_videos?course_id=${course_id}&start=${start}&folder_wise_course=1&userid=${userid}`
-    );
-    res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
+  // Step 2: Categories from home content
+  const homeRes = await fetch("https://home.nexttoppers.com/home/content", {
+    method: "POST",
+    headers: NT_HEADERS,
+    body: JSON.stringify({}),
+  });
+  const homeData = await homeRes.json();
+  const featureLayout = homeData.data?.find((l) => l.layout_type === "layout_feature");
+  const categories = featureLayout ? featureLayout.list : [];
 
-app.get('/api/video-details', async (req, res) => {
-  const { course_id, video_id, ytflag = 0 } = req.query;
-  if (!course_id || !video_id) {
-    return res.status(400).json({ success: false, error: 'course_id & video_id required' });
+  const categorizedBatchIds = new Set();
+
+  // Step 3: For each category → fetch sub-categories + direct courses
+  const batchPromises = categories.map(async (category) => {
+    const catRes = await fetch("https://course.nexttoppers.com/course/all-course", {
+      method: "POST",
+      headers: NT_HEADERS,
+      body: JSON.stringify({
+        view_type: "0",
+        cat_id: category.id.toString(),
+        cat_parent_id: "0",
+        page: "1",
+        limit: "100",
+        is_free: "0",
+        is_trending: "0",
+      }),
+    });
+    const catData = await catRes.json();
+
+    let subCategories = [];
+    let directCourses = [];
+
+    if (catData.data) {
+      const catLayout = catData.data.find((l) => l.layout_type === "category_list_layout");
+      const courseLayout = catData.data.find((l) => l.layout_type === "course_list_layout");
+      if (catLayout && catLayout.list) subCategories = catLayout.list;
+      if (courseLayout && courseLayout.list) {
+        directCourses = courseLayout.list;
+        directCourses.forEach((c) => categorizedBatchIds.add(c.id));
+      }
+    }
+
+    const subPromises = subCategories.map(async (sub) => {
+      const subRes = await fetch("https://course.nexttoppers.com/course/all-course", {
+        method: "POST",
+        headers: NT_HEADERS,
+        body: JSON.stringify({
+          view_type: "0",
+          cat_id: sub.id.toString(),
+          cat_parent_id: category.id.toString(),
+          page: "1",
+          limit: "100",
+          is_free: "0",
+          is_trending: "0",
+        }),
+      });
+      const subData = await subRes.json();
+      let deepBatches = [];
+      if (subData.data) {
+        const cLayout = subData.data.find((l) => l.layout_type === "course_list_layout");
+        if (cLayout && cLayout.list) {
+          deepBatches = cLayout.list;
+          deepBatches.forEach((c) => categorizedBatchIds.add(c.id));
+        }
+      }
+      return {
+        sub_id: sub.id,
+        sub_title: sub.title,
+        sub_thumbnail: sub.thumbnail,
+        batches: deepBatches,
+      };
+    });
+
+    const resolvedSubs = await Promise.all(subPromises);
+
+    return {
+      category_id: category.id,
+      category_name: category.title,
+      category_icon: category.thumbnail,
+      sub_categories: resolvedSubs,
+      batches: directCourses,
+    };
+  });
+
+  const catalogTree = await Promise.all(batchPromises);
+
+  // Step 4: "Others" supplement
+  const others = allMasterCourses.filter((c) => !categorizedBatchIds.has(c.id));
+  if (others.length > 0) {
+    catalogTree.push({
+      category_id: "others",
+      category_name: "Others",
+      category_icon: "https://via.placeholder.com/150/202124/FFFFFF?text=Others",
+      sub_categories: [],
+      batches: others,
+    });
   }
-  try {
-    const data = await fetchFromApi(
-      `/get/fetchVideoDetailsById?course_id=${course_id}&video_id=${video_id}&ytflag=${ytflag}&folder_wise_course=1&lc_app_api_url=`
-    );
-    res.json({ success: true, data });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
-});
 
-// Encrypted variants
-function secureHandler(builder) {
-  return async (req, res) => {
-    try {
-      const data = await fetchFromApi(builder(req.query));
-      const encrypted = encrypt(JSON.stringify(data));
-      res.json({ success: true, encrypted, algorithm: 'aes-256-cbc' });
-    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  return {
+    success: true,
+    message: "Catalog fetched",
+    catalog: catalogTree,
   };
 }
 
-app.get('/api/secure/all-subjects', secureHandler((q) => {
-  if (!q.courseid) throw new Error('courseid required');
-  return `/get/allsubjectfrmlivecourseclass?courseid=${q.courseid}&start=${q.start || -1}`;
-}));
+// ─── 2. Details (overview / content) ─────────────────────────────────────────
+async function getDetails(courseId, type, folderId, limit) {
+  let targetUrl = "";
+  let body = {};
 
-app.get('/api/secure/folder-contents', secureHandler((q) => {
-  if (!q.course_id || !q.folder_id) throw new Error('course_id & folder_id required');
-  return `/get/folder_contentsv3?course_id=${q.course_id}&parent_id=${q.folder_id}&windowsapp=0&start=${q.start || 0}`;
-}));
-
-app.get('/api/secure/previous-live-videos', secureHandler((q) => {
-  if (!q.course_id) throw new Error('course_id required');
-  return `/get/get_previous_live_videos?course_id=${q.course_id}&start=${q.start || 0}&folder_wise_course=1&userid=${q.userid || -1}`;
-}));
-
-app.get('/api/secure/video-details', secureHandler((q) => {
-  if (!q.course_id || !q.video_id) throw new Error('course_id & video_id required');
-  return `/get/fetchVideoDetailsById?course_id=${q.course_id}&video_id=${q.video_id}&ytflag=${q.ytflag || 0}&folder_wise_course=1&lc_app_api_url=`;
-}));
-
-// Decrypt helper
-app.post('/api/decrypt', (req, res) => {
-  try {
-    const { encrypted } = req.body;
-    if (!encrypted || typeof encrypted !== 'string') {
-      return res.status(400).json({ success: false, error: 'encrypted field required' });
-    }
-    res.json({ success: true, data: JSON.parse(decrypt(encrypted)) });
-  } catch (e) {
-    res.status(400).json({ success: false, error: 'Decrypt failed: ' + e.message });
+  if (type === "overview") {
+    targetUrl = "https://course.nexttoppers.com/course/course-details";
+    body = { course_id: courseId, parent_id: "0" };
+  } else if (type === "content") {
+    targetUrl = "https://course.nexttoppers.com/course/all-content";
+    body = {
+      course_id: courseId,
+      folder_id: folderId,
+      page: "1",
+      limit: limit,
+      keyword: "",
+      parent_course_id: "0",
+      is_free: "",
+    };
+  } else {
+    return { success: false, error: "Invalid type. Use overview or content" };
   }
-});
 
-// ============================================
-// BUILT-IN UI (served at /)
-// ============================================
-const HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<title>MDClasses Explorer</title>
-<style>
-  *{box-sizing:border-box}
-  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#222;background:#f7f8fa}
-  h1{margin-bottom:.25rem}
-  .hint{color:#666;margin-top:0;font-size:.9rem}
-  .card{background:#fff;border:1px solid #e3e6ea;border-radius:8px;padding:1rem;margin:1rem 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  .card h2{margin:0 0 .75rem;font-size:1rem}
-  input,button{font:inherit;padding:.5rem .75rem;border:1px solid #cfd4da;border-radius:6px}
-  input{margin-right:.5rem;min-width:180px}
-  button{background:#2f6ef7;color:#fff;border-color:#2f6ef7;cursor:pointer}
-  button:hover{background:#2558c8}
-  pre{background:#111827;color:#e5e7eb;padding:1rem;border-radius:8px;overflow:auto;max-height:480px;font-size:.85rem}
-</style>
-</head>
-<body>
-  <h1>MDClasses API Explorer</h1>
-  <p class="hint">Token stays server-side. All calls go through this proxy.</p>
-
-  <div class="card"><h2>All Subjects</h2>
-    <input id="c1" placeholder="courseid" /><button id="b1">Fetch</button>
-  </div>
-
-  <div class="card"><h2>Folder Contents</h2>
-    <input id="c2" placeholder="course_id" /><input id="f2" placeholder="folder_id" /><button id="b2">Fetch</button>
-  </div>
-
-  <div class="card"><h2>Video Details</h2>
-    <input id="c3" placeholder="course_id" /><input id="v3" placeholder="video_id" /><button id="b3">Fetch</button>
-  </div>
-
-  <div class="card"><h2>Previous Live Videos</h2>
-    <input id="c4" placeholder="course_id" /><button id="b4">Fetch</button>
-  </div>
-
-  <div class="card"><h2>Encryption demo</h2>
-    <button id="b5">Fetch encrypted → auto-decrypt</button>
-  </div>
-
-  <pre id="out">Output will appear here…</pre>
-
-<script>
-const out = document.getElementById('out');
-const show = (x) => out.textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2);
-async function j(url, opts) {
-  const r = await fetch(url, opts);
-  const d = await r.json();
-  if (!r.ok || d.success === false) throw new Error(d.error || ('HTTP ' + r.status));
-  return d;
-}
-const bind = (id, fn) => document.getElementById(id).onclick = async () => {
-  try { show(await fn()); } catch (e) { show('Error: ' + e.message); }
-};
-
-bind('b1', async () => {
-  const c = document.getElementById('c1').value.trim();
-  if (!c) throw new Error('courseid required');
-  return (await j('/api/all-subjects?courseid=' + encodeURIComponent(c))).data;
-});
-
-bind('b2', async () => {
-  const c = document.getElementById('c2').value.trim();
-  const f = document.getElementById('f2').value.trim();
-  if (!c || !f) throw new Error('course_id & folder_id required');
-  return (await j('/api/folder-contents?course_id=' + encodeURIComponent(c) + '&folder_id=' + encodeURIComponent(f))).data;
-});
-
-bind('b3', async () => {
-  const c = document.getElementById('c3').value.trim();
-  const v = document.getElementById('v3').value.trim();
-  if (!c || !v) throw new Error('course_id & video_id required');
-  return (await j('/api/video-details?course_id=' + encodeURIComponent(c) + '&video_id=' + encodeURIComponent(v))).data;
-});
-
-bind('b4', async () => {
-  const c = document.getElementById('c4').value.trim();
-  if (!c) throw new Error('course_id required');
-  return (await j('/api/previous-live-videos?course_id=' + encodeURIComponent(c))).data;
-});
-
-bind('b5', async () => {
-  const c = document.getElementById('c1').value.trim() || 'DEMO';
-  const enc = await j('/api/secure/all-subjects?courseid=' + encodeURIComponent(c));
-  const dec = await j('/api/decrypt', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ encrypted: enc.encrypted }),
+  const apiRes = await fetch(targetUrl, {
+    method: "POST",
+    headers: NT_HEADERS,
+    body: JSON.stringify(body),
   });
-  return { algorithm: enc.algorithm, note: 'ciphertext → plaintext OK', plaintext: dec.data };
-});
-</script>
-</body>
-</html>`;
+  return await apiRes.json();
+}
 
-app.get('/', (req, res) => res.type('html').send(HTML));
+// ─── 2b. PDF / Content Details (NEW) ─────────────────────────────────────────
+async function getPdfDetails(contentId, courseId) {
+  const targetUrl =
+    `https://course.nexttoppers.com/course/content-details` +
+    `?content_id=${encodeURIComponent(contentId)}` +
+    `&course_id=${encodeURIComponent(courseId)}`;
 
-// ============================================
-// START
-// ============================================
-app.listen(PORT, () => {
-  console.log(`🚀 http://localhost:${PORT}`);
-  console.log(`🌐 ${BASE_API}`);
-  console.log(`🎫 Token set: ${Boolean(BEARER_TOKEN)}`);
-  console.log(`🔐 Key: ${ENCRYPTION_KEY.toString('hex').slice(0, 8)}…`);
-});
+  const apiRes = await fetch(targetUrl, {
+    method: "POST",
+    headers: NT_PDF_HEADERS,
+    body: JSON.stringify({}),
+  });
+
+  if (!apiRes.ok) {
+    throw new Error(`NT content-details failed (HTTP ${apiRes.status})`);
+  }
+
+  const json = await apiRes.json();
+
+  // Try to surface the PDF link from common shapes, but always return the raw data.
+  const d = json?.data || {};
+  const nested = d?.content || d?.content_detail || d?.details || {};
+  const pdfUrl =
+    d.pdf_url ||
+    d.pdfUrl ||
+    d.file_url ||
+    d.fileUrl ||
+    d.url ||
+    nested.pdf_url ||
+    nested.file_url ||
+    nested.url ||
+    "";
+
+  return {
+    success: true,
+    platform: "nt",
+    content_id: contentId,
+    course_id: courseId,
+    pdf_url: pdfUrl,
+    data: json,
+  };
+}
+
+// ─── 3. Stream / Lecture (Next-Toppers → Videocrypt resolver) ────────────────
+async function getStream(vdcId) {
+  // Step 1: fetch the dynamic media headers from Next-Toppers
+  const headerRes = await fetch(
+    "https://nexttoppers.com/api/media-headers?deviceType=1&userId=0",
+    {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+    }
+  );
+
+  if (!headerRes.ok) {
+    throw new Error(`Failed to fetch Next-Toppers media headers (HTTP ${headerRes.status})`);
+  }
+
+  const mediaHeaders = await headerRes.json();
+  const ntVcHeaders = {
+    ...mediaHeaders,
+    "Content-Type": "application/json",
+  };
+
+  // Step 2: resolve the DRM video details from Videocrypt
+  const res = await fetch("https://api.videocrypt.com/getVideoDetailsDrm", {
+    method: "POST",
+    headers: ntVcHeaders,
+    body: JSON.stringify({ name: vdcId, flag: 1 }),
+  });
+
+  const json = await res.json();
+  const m3u8Url = json?.data?.link?.file_url || "";
+  const token = json?.data?.link?.token || "";
+
+  if (!m3u8Url) {
+    return {
+      success: false,
+      platform: "nt",
+      vdcId,
+      url: "",
+      directUrl: "",
+      token: token || "",
+      type: "hls",
+      error: "Stream URL not available for this Next-Toppers video",
+    };
+  }
+
+  return {
+    success: true,
+    platform: "nt",
+    vdcId,
+    url: m3u8Url,
+    directUrl: m3u8Url,
+    token: token || "",
+    type: "hls",
+  };
+}
